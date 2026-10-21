@@ -1,0 +1,30 @@
+# Service-local Python environments.
+.venv/
+venv/
+
+# Python bytecode and build artifacts.
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Test, lint and coverage output.
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Local credentials and overrides; keep the placeholder example.
+.env
+.env.*
+!.env.example
+
+# Local logs and operating-system files.
+*.log
+.DS_Store
+Thumbs.db

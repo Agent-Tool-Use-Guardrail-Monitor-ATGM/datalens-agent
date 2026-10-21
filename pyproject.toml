@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "datalens-statistics-agent"
+version = "0.1.0"
+description = "DataLens statistics-agent backend"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+# Application and development dependencies are installed from requirements.txt.
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/statistics_agent"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-config --strict-markers"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

@@ -1,0 +1,12 @@
+# Runtime and development dependencies; use Python 3.12 in this service's .venv.
+# Update these verified direct versions deliberately; pip resolves transitives.
+fastapi==0.158.0
+uvicorn==0.54.0
+pydantic==2.14.1
+pydantic-settings==2.16.1
+SQLAlchemy[asyncio]==2.0.55
+psycopg[binary]==3.3.6
+alembic==1.20.0
+pytest==9.1.1
+httpx==0.28.1
+ruff==0.17.1
