@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException
 
+from statistics_agent.api.health import router as health_router
 from statistics_agent.api.http import RequestMiddleware, http_error, validation_error
 from statistics_agent.core.logging import LogEvent, ServiceLog
 from statistics_agent.core.settings import Settings, load_settings
@@ -52,4 +53,5 @@ def create_app(settings: Settings | None = None, *, log_stream: TextIO | None = 
     app.add_exception_handler(HTTPException, http_error)
     app.add_exception_handler(RequestValidationError, validation_error)
     app.add_middleware(RequestMiddleware, log=log)
+    app.include_router(health_router)
     return app

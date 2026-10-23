@@ -120,12 +120,19 @@ class RequestMiddleware:
             try:
                 route = getattr(scope.get("route"), "path", "unmatched")
                 method = scope.get("method", "")
-                self.log.emit(
-                    LogEvent.HTTP_FAILED if failed else LogEvent.HTTP_COMPLETED,
-                    status=status,
-                    duration_ms=(perf_counter() - beginning) * 1000,
-                    route=route,
-                    method=method if method in METHODS else "OTHER",
+                healthy_probe = (
+                    method == "GET"
+                    and route in {"/health/live", "/health/ready"}
+                    and status == 200
+                    and not failed
                 )
+                if not healthy_probe:
+                    self.log.emit(
+                        LogEvent.HTTP_FAILED if failed else LogEvent.HTTP_COMPLETED,
+                        status=status,
+                        duration_ms=(perf_counter() - beginning) * 1000,
+                        route=route,
+                        method=method if method in METHODS else "OTHER",
+                    )
             finally:
                 request_id_context.reset(token)

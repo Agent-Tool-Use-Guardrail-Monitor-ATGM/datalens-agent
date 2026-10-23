@@ -163,7 +163,7 @@ The explicit `--env-file` is local development only; deployment injects variable
 and omits it. The PostgreSQL URL must be structurally valid, but the shell opens
 connections only when an operation needs one. `/docs` and `/openapi.json` exist only in development/test;
 staging/production disable them. Other paths return safe 404 envelopes. There are
-no business/authentication or health endpoints yet. HTTPX/TestClient test routes
+no business/authentication endpoints yet; health probes are documented below. HTTPX/TestClient test routes
 are registered only in the tests, never in the factory.
 
 `X-Request-ID` accepts one canonical UUID, otherwise generates a fresh UUID. The
@@ -246,7 +246,7 @@ run `down --volumes` unless intentionally discarding local database data.
 Lifespan provides `app.state.database`, an instance of
 `statistics_agent.persistence.database.Database`. Imports, app construction and
 pool construction perform no database I/O; the first operation checks out a
-connection. Startup may succeed during an outage; readiness is implemented in 1.9.
+connection. Startup may succeed during an outage; readiness now reports 503 until the database and schema are usable.
 Shutdown disposes idle connections after operations finish and clears the state.
 A closed Database rejects future sessions; each process/lifespan gets its own pool.
 
@@ -268,8 +268,7 @@ from DB_STATEMENT_TIMEOUT_MS. libpq connection timeouts apply per connection
 attempt/address and have a two-second minimum. Pre-ping checks stale connections;
 SQL echo is disabled and bound parameters are hidden in SQLAlchemy errors. Raw
 SQL/driver exceptions must still not be logged or exposed by callers. Existing
-safe HTTP handling contains database failures. DB_HEALTH_TIMEOUT_SECONDS is
-configuration only until readiness in 1.9. No schema creation runs at startup.
+safe HTTP handling contains database failures. DB_HEALTH_TIMEOUT_SECONDS now bounds the readiness probe work. No schema creation runs at startup.
 
 ### Disposable database tests and CI
 
@@ -329,8 +328,7 @@ return exit code 0 for success and 1 for a mismatch/failure. Output uses fixed
 safe messages, never URLs, SQL, raw exceptions or rejected values. The check
 is read-only: it compares database heads with the packaged migration heads,
 without creating a version table or silently stamping an unknown revision.
-`read_schema_status(connection)` is also available for the readiness check in
-1.9; HTTP health routes are not added here. Offline SQL generation needs no DB:
+`read_schema_status(connection)` is used by the readiness route added in 1.9. Offline SQL generation needs no DB:
 
 ```powershell
 python -m alembic upgrade head --sql
@@ -364,25 +362,71 @@ from the template succeeded. Ruff lint/format and `pip check` pass. One existing
 TestClient/HTTPX warning remains. The existing required `tests` CI job discovers
 these checks automatically; this branch's GitHub run remains pending.
 
-Local persistent agent_db was checked without changes and currently reports a
-schema mismatch because its baseline has not been applied. Run the explicit
-upgrade command above when ready to initialize it. No migration was applied to
-that persistent database during this implementation. Disposable test resources
+During 1.8, the local database was checked read-only and was then unmigrated.
+At 1.9 verification it already matched the expected schema; both local probes
+returned 200. No persistent migration or data change was performed in 1.9.
+Fresh databases still need the explicit upgrade command before readiness passes. Disposable test resources
 were removed afterward. No new dependency, Dockerfile, deployment or health
 route was introduced. Implementation branch: `feature/alembic-baseline`.
 
 Sources: [Alembic async/connection sharing](https://alembic.sqlalchemy.org/en/latest/cookbook.html#using-asyncio-with-alembic),
 [revision inspection](https://alembic.sqlalchemy.org/en/latest/api/runtime.html#alembic.runtime.migration.MigrationContext.get_current_heads).
 
+## Liveness and readiness — step 1.9
+
+- `GET /health/live` returns 200 with `{"status":"alive"}` when the process can
+  serve HTTP. It never accesses PostgreSQL, Keycloak, Kafka or an LLM.
+- `GET /health/ready` returns 200 with `{"status":"ready"}` only after lifespan
+  started, a database connection/SELECT 1 succeeds, and the recorded Alembic heads
+  exactly match this release's packaged heads. Otherwise it returns a safe 503
+  error envelope with code `not_ready`, message `Service not ready`, request ID
+  and empty details. Missing migrations are not applied by the probe.
+
+Both endpoints are available without login in all environments, return
+`Cache-Control: no-store` and preserve X-Request-ID correlation. Development
+OpenAPI lists these foundation routes and the readiness 503 error model;
+staging/production still disable API documentation. No credentials, addresses,
+revision strings or driver failures appear in the health responses.
+
+The readiness work uses DB_HEALTH_TIMEOUT_SECONDS for pool acquisition, SQL and
+schema inspection. Connection context managers cancel/rollback/close the probe
+operation on failure/timeout. External task cancellation is not converted into
+an authorization or database result. Each probe checks current state rather than
+using cached positive readiness, so repair can restore readiness without an app
+restart. Successful GET health requests are excluded from normal request logs;
+unhealthy probes still emit safe status/correlation metadata. Requests to other
+paths and invalid methods retain normal logging.
+
+Kubernetes should use liveness for process restart decisions and readiness for
+traffic eligibility. A database outage must not trigger liveness restart loops.
+These endpoint semantics follow [Kubernetes probes](https://kubernetes.io/docs/concepts/workloads/pods/probes/).
+Kubernetes manifests, deployment rollout policy and monitoring remain plan 10.
+
+From the service directory, start the API using the documented command, then:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health/live
+Invoke-RestMethod http://127.0.0.1:8000/health/ready
+```
+
+Fresh local storage first needs the explicit migration upgrade from step 1.8.
+Read-only local smoke checks returned 200/alive and 200/ready during 1.9; no
+persistent data was changed. The full disposable-PostgreSQL suite passes 150
+tests, including 12 new health checks covering safe failures, timeout/cancellation,
+missing/wrong schema, no automatic migration, pool/query recovery, connection
+failure, development documentation and low-volume probe logging. Ruff lint/format
+and dependency consistency pass; one existing TestClient/HTTPX warning remains.
+No dependency, Docker image, cloud resource or additional CI job was introduced.
+
 ## Development status
 
-Steps 1.1–1.7 are merged into main. Step 1.8 is locally complete on
-`feature/alembic-baseline`, pending commit/PR/CI delivery. The full suite passes
-138 tests against disposable PostgreSQL (122 earlier checks and 16 migration
-checks). Ruff lint/format and dependency consistency pass. The existing upstream
-TestClient/HTTPX warning remains. Next implementation is 1.9, liveness/readiness,
-only when requested. Without TEST_DATABASE_URL, marked PostgreSQL checks skip
-locally; these skips are not counted as passes and are forbidden in CI. From the service directory:
+Steps 1.1–1.8 are merged into main. Step 1.9 is locally complete on
+`feature/health-checks`, pending commit/PR/CI delivery. All 150 tests pass against
+disposable PostgreSQL, including 12 new health checks. Ruff lint/format and
+`pip check` pass; one existing upstream TestClient/HTTPX warning remains.
+Next is 1.10, reproducibility and foundation sign-off, only when requested.
+Missing TEST_DATABASE_URL skips marked checks locally and fails them in CI;
+skipped database tests must not be reported as passed. From the service directory:
 
 ```powershell
 python -m ruff check .
@@ -456,8 +500,8 @@ PR #2 delivered the initial workflow and contracts with passing GitHub checks;
 step 1.6 is also merged into origin/main. The user confirmed prerequisite branch
 protection; effective remote rules were not independently audited. Keep `tests`
 required, require PRs and an up-to-date branch, and restrict direct-push/bypass
-permissions. Step 1.7 is now merged into fetched origin/main. Step 1.8 has local evidence
-only until its PR runs CI; nothing was staged, committed, pushed or merged here.
+permissions. Steps 1.7 and 1.8 are merged into fetched origin/main. Step 1.9 has local
+evidence only until its PR runs CI; nothing was staged, committed, pushed or merged here.
 
 Planning documents in the parent workspace are outside this Git repository and
 will not appear in its PR. Changes to them are reported separately until they
