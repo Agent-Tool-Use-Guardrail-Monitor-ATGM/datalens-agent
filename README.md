@@ -103,7 +103,8 @@ the database integration should explicitly extract the URL with
 `settings.database_url.get_secret_value()`; never log or serialize that value.
 
 The application factory now loads and shares one settings object per app.
-Database connections and timeout enforcement remain step 1.7 work.
+Lifespan now creates/disposes the agent database pool; connections are lazy.
+Step 1.7 enforces pool/connect/statement limits when database work is performed.
 
 ## Shared contracts — step 1.4
 
@@ -149,18 +150,18 @@ requires compatible readers before producer rollout, or a schema-version change.
 isolated FastAPI application. Supply validated settings in tests or let the
 factory load the process environment once. Imports and construction do not
 contact infrastructure. Lifespan tracks startup/shutdown and emits service events;
-actual database resource creation/disposal remains step 1.7 work.
+step 1.7 now creates the lazy database pool here and disposes it on shutdown.
 
 From the service directory with its `.venv` activated, create an ignored `.env`
 from `.env.example` if needed, replace placeholder configuration, and start:
 
 ```powershell
-python -m uvicorn statistics_agent.app:create_app --factory --env-file .env --host 127.0.0.1 --port 8000 --no-access-log
+python -m uvicorn statistics_agent.app:create_app --factory --loop statistics_agent.core.event_loop:create_event_loop --env-file .env --host 127.0.0.1 --port 8000 --no-access-log
 ```
 
 The explicit `--env-file` is local development only; deployment injects variables
-and omits it. The PostgreSQL URL must be structurally valid, but the shell does
-not connect to it yet. `/docs` and `/openapi.json` exist only in development/test;
+and omits it. The PostgreSQL URL must be structurally valid, but the shell opens
+connections only when an operation needs one. `/docs` and `/openapi.json` exist only in development/test;
 staging/production disable them. Other paths return safe 404 envelopes. There are
 no business/authentication or health endpoints yet. HTTPX/TestClient test routes
 are registered only in the tests, never in the factory.
@@ -189,16 +190,131 @@ Lifespan follows the [FastAPI context-manager interface](https://fastapi.tiangol
 The existing CI job runs the new tests automatically when their branch is opened
 as a PR. No dependencies or workflow changes were needed for this step.
 
+## PostgreSQL foundation — step 1.7
+
+The agent owns its schema and application SQL in this repository. PostgreSQL is
+an independent container/process with private credentials and persistent storage;
+it is not embedded in the application image or replicated per API/worker replica.
+API and worker share `agent_db`. Keycloak has its own database/deployment; neither
+service reads the other's tables. A future infrastructure repository may own
+cloud deployment configuration; models and migrations stay with agent code.
+No separate database code repository or custom PostgreSQL image is introduced.
+
+### Local database
+
+[compose.yaml](compose.yaml) uses the official `postgres:17.11-bookworm` image,
+service `agent-postgres`, database `agent_db`, user `agent_local`, and named volume
+`datalens-agent-local_agent-postgres-data`. The host port is bound to loopback
+only, default `127.0.0.1:54329`. Local Docker users can still administer containers;
+loopback binding is not a replacement for database authentication.
+
+Ignored `.env.postgres` and `.env` were created on this workstation with a generated
+password, and the healthy local database was left running. No secret values were
+printed or committed. For a fresh checkout, from the service directory:
+
+```powershell
+Copy-Item .env.postgres.example .env.postgres
+Copy-Item .env.example .env
+```
+
+Choose a local password in `.env.postgres` and put its URL-encoded equivalent in
+`.env`'s DATABASE_URL, using user `agent_local`, port 54329 and database `agent_db`.
+Change both files consistently. Start Docker Desktop's Linux engine, then run:
+
+```powershell
+docker compose --env-file .env.postgres up -d --wait
+```
+
+The command starts only PostgreSQL, not the API. Use the FastAPI command above
+for the API. The custom event-loop factory selects the Windows Selector loop
+required by Psycopg; it uses the normal asyncio loop on Linux. No global event
+loop policy or additional dependency is installed.
+
+`POSTGRES_USER` is a bootstrap superuser in the official image. These local/test
+fixtures are development infrastructure only. Production runtime/migrator users,
+TLS, backups and least-privilege deployment belong to plan 10. Never reuse the
+fixed disposable-test credentials outside tests.
+
+The named volume preserves local data across container replacement and normal
+`docker compose --env-file .env.postgres down`. Password/database initialization
+variables apply only when storage is empty; editing the env file does not rotate
+an existing database password. Do not delete the volume as a routine fix. Do not
+run `down --volumes` unless intentionally discarding local database data.
+
+### Sessions, transactions and lifecycle
+
+Lifespan provides `app.state.database`, an instance of
+`statistics_agent.persistence.database.Database`. Imports, app construction and
+pool construction perform no database I/O; the first operation checks out a
+connection. Startup may succeed during an outage; readiness is implemented in 1.9.
+Shutdown disposes idle connections after operations finish and clears the state.
+A closed Database rejects future sessions; each process/lifespan gets its own pool.
+
+```python
+from sqlalchemy import text
+
+async with app.state.database.session() as session:
+    result = await session.scalar(text("SELECT 1"))
+    # Future writes must explicitly call await session.commit().
+```
+
+Each operation owns its session and explicitly commits or rolls back. Leaving
+without committing, an exception, or task cancellation rolls back pending work
+and returns the connection. Never share a session across concurrent tasks or hold
+one across LLM, identity or remote-tool calls. `DB_POOL_SIZE` is the hard pool cap
+(`max_overflow=0`); acquisition waits use DB_POOL_TIMEOUT_SECONDS. Psycopg receives
+DB_CONNECT_TIMEOUT_SECONDS, and each connection sets PostgreSQL statement_timeout
+from DB_STATEMENT_TIMEOUT_MS. libpq connection timeouts apply per connection
+attempt/address and have a two-second minimum. Pre-ping checks stale connections;
+SQL echo is disabled and bound parameters are hidden in SQLAlchemy errors. Raw
+SQL/driver exceptions must still not be logged or exposed by callers. Existing
+safe HTTP handling contains database failures. DB_HEALTH_TIMEOUT_SECONDS is
+configuration only until readiness in 1.9. No schema creation runs at startup.
+
+### Disposable database tests and CI
+
+[compose.test.yaml](compose.test.yaml) creates a separate `agent_test_db` under
+user `agent_test`, bound to `127.0.0.1:54330`, with tmpfs storage and fixed test-only
+credentials. It never mounts the persistent local volume. From this directory:
+
+```powershell
+docker compose -f compose.test.yaml up -d --wait
+$env:TEST_DATABASE_URL = 'postgresql+psycopg://agent_test:test-only-password@127.0.0.1:54330/agent_test_db'
+python -m pytest -q
+Remove-Item Env:TEST_DATABASE_URL
+docker compose -f compose.test.yaml down
+```
+
+Only use an explicitly disposable PostgreSQL instance with these test database
+and role names. Tests create random `foundation_<uuid>` schemas and drop only
+those schemas; they never create business models or use SQLite. A missing URL
+skips marked `postgres` checks locally, but fails those checks in CI. An invalid
+URL, unavailable server or wrong database/role fails rather than skips.
+
+The existing required `tests` job now starts its own PostgreSQL service and sets
+TEST_DATABASE_URL. It still runs pytest only after dependency installation;
+no new workflow/check name or lint gate is introduced. The local full suite
+proved commit visibility, implicit/explicit/error rollback, pool/statement/connect
+bounds, cancellation cleanup, backend connection disposal and safe HTTP failures.
+Local `agent_db` connection and empty public schema were also verified. The
+GitHub run for this branch remains pending; local passes do not prove CI execution.
+The disposable local test container/network were removed after verification;
+the persistent local agent database remains running.
+
+Sources: [SQLAlchemy async sessions](https://docs.sqlalchemy.org/en/20/orm/extensions/asyncio.html),
+[official PostgreSQL image and initialization](https://hub.docker.com/_/postgres),
+[Psycopg Windows asyncio requirements](https://www.psycopg.org/psycopg3/docs/advanced/async.html).
+Alembic migrations remain step 1.8; no business tables were added in 1.7.
+
 ## Development status
 
-Steps 1.1–1.5 are complete. PR #2 delivered contracts and CI with passing tests;
-the user confirmed repository protection before authorizing step 1.6. The remote
-rules were not independently audited. Step 1.6 is locally complete on
-`feature/fastapi-foundation`, awaiting commit, PR and GitHub verification.
-Next implementation is 1.7, PostgreSQL and transaction lifecycle, when requested.
-The full suite passes 111 tests (34 settings, 53 contracts, 24 application checks).
-Ruff lint/format and `pip check` pass. TestClient emits one upstream warning about
-HTTPX integration; it is not suppressed and dependencies were not changed. From the service directory:
+Steps 1.1–1.6 are merged into `main`. Step 1.7 is locally complete on
+`feature/postgres-foundation`, awaiting commit/PR/CI delivery. Local verification
+passes 122 tests: 111 earlier checks and 11 real PostgreSQL integration checks.
+Ruff lint/format and `pip check` pass. One existing upstream TestClient/HTTPX
+warning remains. Next implementation, when requested, is 1.8 (Alembic baseline).
+Use the database test setup below for the full suite; without TEST_DATABASE_URL,
+local database tests are explicitly skipped and must not be counted as passed. From the service directory:
 
 ```powershell
 python -m ruff check .
@@ -261,30 +377,19 @@ local `main` and create a new task branch for the next step.
 
 ### GitHub Actions and merge-gate status
 
-**Implemented locally — 23 October 2026:** [ci.yml](.github/workflows/ci.yml)
-runs the `tests` job on PRs targeting `main` and pushes to `main` after merges.
-There are no path filters, so documentation-only PRs also run it. The workflow
-checks out the repository, prepares Python 3.12 on Ubuntu 24.04, installs
-`requirements.txt` and the local package, then runs `python -m pytest -q`.
-It has read-only repository permissions and a ten-minute job timeout. No
-application secrets, database or local `.venv` are required. Actions follow
-their official [checkout](https://github.com/actions/checkout/tree/v7) and
-[setup-python](https://github.com/actions/setup-python/tree/v7) interfaces.
+The tests-only [ci.yml](.github/workflows/ci.yml) runs job `tests` on every PR to
+`main` and again on main after merges, with read-only permissions and a ten-minute
+timeout. It uses Python 3.12 and PostgreSQL 17.11 on Ubuntu 24.04. Dependency and
+package installation precede pytest. No application secrets or local `.venv`
+are used; the database service uses disposable test-only credentials. No path
+filters skip documentation PRs. Ruff and `pip check` remain local checks.
 
-At the user's request, CI currently runs tests only. Dependency installation is
-setup; lint, formatting and `pip check` remain local commands, not CI checks.
-The earlier proposed `quality` check is replaced by `tests` for this scope.
-Local verification passed all 87 tests on Windows. The sandbox's temporary
-directory initially prevented test setup; the unrestricted rerun passed without
-code changes. Linux execution and Actions orchestration await the first PR run.
-
-**Delivered:** [PR #2](https://github.com/Agent-Tool-Use-Guardrail-Monitor-ATGM/datalens-agent/pull/2)
-merged the contracts and workflow into `main` with a successful `tests` run.
-The user confirmed repository settings were ready before step 1.6; effective
-remote rules were not independently audited. The old policy branch was removed
-and PR #1 closed. Keep `tests` required, require a PR and an up-to-date branch,
-and restrict direct pushes/bypasses. Step 1.6 has only local verification until
-its own PR runs CI. Database integration checks join the gate in steps 1.7–1.9.
+PR #2 delivered the initial workflow and contracts with passing GitHub checks;
+step 1.6 is also merged into origin/main. The user confirmed prerequisite branch
+protection; effective remote rules were not independently audited. Keep `tests`
+required, require PRs and an up-to-date branch, and restrict direct-push/bypass
+permissions. Step 1.7 on `feature/postgres-foundation` has local evidence only
+until its own PR runs CI; nothing was staged, committed, pushed or merged here.
 
 Planning documents in the parent workspace are outside this Git repository and
 will not appear in its PR. Changes to them are reported separately until they

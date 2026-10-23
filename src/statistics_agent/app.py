@@ -10,6 +10,7 @@ from starlette.exceptions import HTTPException
 from statistics_agent.api.http import RequestMiddleware, http_error, validation_error
 from statistics_agent.core.logging import LogEvent, ServiceLog
 from statistics_agent.core.settings import Settings, load_settings
+from statistics_agent.persistence.database import Database
 
 
 def create_app(settings: Settings | None = None, *, log_stream: TextIO | None = None) -> FastAPI:
@@ -19,13 +20,19 @@ def create_app(settings: Settings | None = None, *, log_stream: TextIO | None = 
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        database = Database(settings)
+        app.state.database = database
         app.state.started = True
         try:
             log.emit(LogEvent.STARTED)
             yield
         finally:
             app.state.started = False
-            log.emit(LogEvent.STOPPED)
+            try:
+                await database.close()
+            finally:
+                app.state.database = None
+                log.emit(LogEvent.STOPPED)
 
     development = settings.app_env in {"development", "test"}
     app = FastAPI(
@@ -39,6 +46,7 @@ def create_app(settings: Settings | None = None, *, log_stream: TextIO | None = 
         redirect_slashes=False,
     )
     app.state.settings = settings
+    app.state.database = None
     app.state.started = False
     app.state.log = log
     app.add_exception_handler(HTTPException, http_error)
