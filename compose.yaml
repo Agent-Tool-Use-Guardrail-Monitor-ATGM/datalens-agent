@@ -1,0 +1,22 @@
+# Local development only. Keycloak uses its own deployment/database.
+name: datalens-agent-local
+
+services:
+  agent-postgres:
+    image: postgres:17.11-bookworm
+    environment:
+      POSTGRES_DB: agent_db
+      POSTGRES_USER: agent_local
+      POSTGRES_PASSWORD: ${AGENT_POSTGRES_PASSWORD:?Set AGENT_POSTGRES_PASSWORD in .env.postgres}
+    ports:
+      - "127.0.0.1:${AGENT_POSTGRES_PORT:-54329}:5432"
+    volumes:
+      - agent-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent_local -d agent_db"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  agent-postgres-data:

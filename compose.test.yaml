@@ -1,0 +1,19 @@
+# Disposable tests only: fixed non-production credentials, no persistent volume.
+name: datalens-agent-tests
+
+services:
+  test-postgres:
+    image: postgres:17.11-bookworm
+    environment:
+      POSTGRES_DB: agent_test_db
+      POSTGRES_USER: agent_test
+      POSTGRES_PASSWORD: test-only-password
+    ports:
+      - "127.0.0.1:54330:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent_test -d agent_test_db"]
+      interval: 2s
+      timeout: 3s
+      retries: 15

@@ -23,6 +23,7 @@ coverage.xml
 .env
 .env.*
 !.env.example
+!.env.postgres.example
 
 # Local logs and operating-system files.
 *.log
