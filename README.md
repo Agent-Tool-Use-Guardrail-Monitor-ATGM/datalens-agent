@@ -146,8 +146,9 @@ requires compatible readers before producer rollout, or a schema-version change.
 
 ## Development status
 
-Steps 1.1–1.4 are locally complete; outstanding 1.4 contract changes still need
-PR/CI verification. Next is 1.5, GitHub Actions and the protected-main workflow.
+Steps 1.1–1.4 are locally complete; their remote merge status is unverified.
+Step 1.5 is in progress: the tests-only workflow exists locally, while its first
+GitHub run and required-check enforcement still need verification.
 FastAPI lifecycle/errors/logging moves from 1.5 to 1.6; the other former steps
 1.6–1.9 become 1.7–1.10. API functionality remains pending.
 Configuration has 34 focused checks covering valid/invalid values, explicit
@@ -211,21 +212,32 @@ local `main` and create a new task branch for the next step.
 
 ### GitHub Actions and merge-gate status
 
-**Pending:** `.github/workflows/ci.yml` does not exist yet, and remote branch
-rules have not been inspected or configured. Local checks do not prove GitHub
-enforcement. The next implementation step, 1.5, creates the workflow and verifies
-the `main` rule; no commit, push, PR or merge was performed during this planning
-update. Current branch `chore/github-workflow-policy` preserves earlier pending
-1.4 work alongside these documentation changes; review their scope before
-committing, or publish them as separate PRs in dependency order.
+**Implemented locally — 23 October 2026:** [ci.yml](.github/workflows/ci.yml)
+runs the `tests` job on PRs targeting `main` and pushes to `main` after merges.
+There are no path filters, so documentation-only PRs also run it. The workflow
+checks out the repository, prepares Python 3.12 on Ubuntu 24.04, installs
+`requirements.txt` and the local package, then runs `python -m pytest -q`.
+It has read-only repository permissions and a ten-minute job timeout. No
+application secrets, database or local `.venv` are required. Actions follow
+their official [checkout](https://github.com/actions/checkout/tree/v7) and
+[setup-python](https://github.com/actions/setup-python/tree/v7) interfaces.
 
-The planned required job is `quality`, running on every PR to `main` and again
-on `main` after merges. It uses a clean Linux runner and Python 3.12, installs
-`requirements.txt` and the local package, then checks dependencies, lint,
-formatting and pytest. No application secrets are required. The GitHub `main`
-rule must require a PR and successful checks, require the branch to be current,
-and restrict direct pushes/bypasses. The exact check name and effective settings
-must be verified on GitHub before calling the merge gate complete. Database
+At the user's request, CI currently runs tests only. Dependency installation is
+setup; lint, formatting and `pip check` remain local commands, not CI checks.
+The earlier proposed `quality` check is replaced by `tests` for this scope.
+Local verification passed all 87 tests on Windows. The sandbox's temporary
+directory initially prevented test setup; the unrestricted rerun passed without
+code changes. Linux execution and Actions orchestration await the first PR run.
+
+**Pending:** push branch `chore/tests-ci` and open a PR targeting `main`, then
+verify that GitHub runs `tests` successfully. This branch includes the previous
+local contracts commit because it is based on `chore/github-workflow-policy`;
+review the whole PR diff if that commit is not yet on remote `main`.
+No commit, push, PR, merge or repository-settings change was performed here.
+Configure the `main` rule to require PRs and the actual `tests` status check,
+require an up-to-date branch, and restrict direct pushes/bypasses. Remote rules
+have not been inspected; local passes do not prove enforcement. Step 1.5 remains
+in progress until the GitHub run and merge gate are verified. Database
 integration checks join the gate when steps 1.7–1.9 introduce that functionality.
 
 Planning documents in the parent workspace are outside this Git repository and
