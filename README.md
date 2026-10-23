@@ -102,9 +102,8 @@ should use this loader instead of logging raw Pydantic validation errors. Only
 the database integration should explicitly extract the URL with
 `settings.database_url.get_secret_value()`; never log or serialize that value.
 
-The application factory will load and share one settings object in step 1.6;
-timeout enforcement and database connections are wired in step 1.7. This step
-validates their configuration only. There is no startup command yet.
+The application factory now loads and shares one settings object per app.
+Database connections and timeout enforcement remain step 1.7 work.
 
 ## Shared contracts — step 1.4
 
@@ -134,27 +133,72 @@ structural contracts cannot detect secrets embedded in arbitrary text.
 `ErrorEnvelope` contains `code`, server-authored `message`, UUID `request_id`
 and at most 20 validation details. Each detail has a trusted schema location of
 at most eight field-name/index parts and a safe error code, without rejected
-values or exception context. The HTTP handlers in step 1.6 will supply safe
-messages and locations rather than copying raw validation errors.
+values or exception context. The HTTP handlers from step 1.6 supply safe
+messages and source-only locations rather than copying raw validation errors.
 `resolve_request_id` accepts canonical 36-character UUID headers and otherwise
-generates a new UUID. Header wiring and response propagation also belong to 1.6.
+generates a new UUID. Header wiring and response propagation are implemented in 1.6.
 
 `tests/fixtures/events_v1.json` contains seven independent wire examples for
 serialization compatibility, not a complete execution trace. Unknown usage
 remains `null`. Unknown top-level fields/versions are rejected; adding fields
 requires compatible readers before producer rollout, or a schema-version change.
 
+## FastAPI shell — step 1.6
+
+`statistics_agent.app.create_app(settings=None, log_stream=None)` returns an
+isolated FastAPI application. Supply validated settings in tests or let the
+factory load the process environment once. Imports and construction do not
+contact infrastructure. Lifespan tracks startup/shutdown and emits service events;
+actual database resource creation/disposal remains step 1.7 work.
+
+From the service directory with its `.venv` activated, create an ignored `.env`
+from `.env.example` if needed, replace placeholder configuration, and start:
+
+```powershell
+python -m uvicorn statistics_agent.app:create_app --factory --env-file .env --host 127.0.0.1 --port 8000 --no-access-log
+```
+
+The explicit `--env-file` is local development only; deployment injects variables
+and omits it. The PostgreSQL URL must be structurally valid, but the shell does
+not connect to it yet. `/docs` and `/openapi.json` exist only in development/test;
+staging/production disable them. Other paths return safe 404 envelopes. There are
+no business/authentication or health endpoints yet. HTTPX/TestClient test routes
+are registered only in the tests, never in the factory.
+
+`X-Request-ID` accepts one canonical UUID, otherwise generates a fresh UUID. The
+response header, safe error body and JSON request log share it; concurrent
+requests have separate state/context. Handlers return canned errors for HTTP
+exceptions, safe 422 validation envelopes, and safe 500 envelopes for unexpected
+exceptions before headers are sent. Validation details contain only a bounded
+source category such as `body` or `query`, never submitted dictionary keys or
+values; at most 20 details are returned. Raw exception details and arbitrary
+exception headers are omitted; controlled 401/405 protocol headers are retained.
+A failure after streaming starts cannot replace the sent status/body: it logs
+`http_failed` with the already-sent status and aborts with a sanitized exception.
+
+Application JSON logs include UTC time, severity, service/version, environment,
+event, request ID and, for requests, method, route template, status and duration.
+Unmatched paths use `unmatched`. No request/response bodies, query strings, raw
+paths, headers, credentials or exception text/tracebacks are recorded. The logger
+accepts controlled events and metadata; it is not a universal secret detector or
+a configuration for every third-party logger. Use the documented `--no-access-log`
+flag: default server access logs can include raw URLs/query strings. Service logs
+use stdout at `LOG_LEVEL`; logger instances and streams do not alter root logging.
+
+Lifespan follows the [FastAPI context-manager interface](https://fastapi.tiangolo.com/advanced/events/).
+The existing CI job runs the new tests automatically when their branch is opened
+as a PR. No dependencies or workflow changes were needed for this step.
+
 ## Development status
 
-Steps 1.1–1.4 are locally complete; their remote merge status is unverified.
-Step 1.5 is in progress: the tests-only workflow exists locally, while its first
-GitHub run and required-check enforcement still need verification.
-FastAPI lifecycle/errors/logging moves from 1.5 to 1.6; the other former steps
-1.6–1.9 become 1.7–1.10. API functionality remains pending.
-Configuration has 34 focused checks covering valid/invalid values, explicit
-dotenv loading, precedence, timeout relationships, secret redaction and absence
-of import/load network side effects. Contracts add 53 checks, bringing the
-current suite to 87 passing tests. From the service directory:
+Steps 1.1–1.5 are complete. PR #2 delivered contracts and CI with passing tests;
+the user confirmed repository protection before authorizing step 1.6. The remote
+rules were not independently audited. Step 1.6 is locally complete on
+`feature/fastapi-foundation`, awaiting commit, PR and GitHub verification.
+Next implementation is 1.7, PostgreSQL and transaction lifecycle, when requested.
+The full suite passes 111 tests (34 settings, 53 contracts, 24 application checks).
+Ruff lint/format and `pip check` pass. TestClient emits one upstream warning about
+HTTPX integration; it is not suppressed and dependencies were not changed. From the service directory:
 
 ```powershell
 python -m ruff check .
@@ -178,7 +222,7 @@ The GitHub remote is already configured at
 [datalens-agent](https://github.com/Agent-Tool-Use-Guardrail-Monitor-ATGM/datalens-agent).
 Every change, including basic setup, documentation and workflow files, uses a
 separate branch and a PR targeting `main`. Never commit or push directly to
-`main`. The persistent rules are in [AGENTS.md](AGENTS.md).
+`main`. Follow the branch and PR rules in this section.
 
 For a new task, start from a clean working tree and an updated `main`:
 
@@ -186,10 +230,15 @@ For a new task, start from a clean working tree and an updated `main`:
 git status
 git switch main
 git pull --ff-only origin main
-git switch -c feat/fastapi-foundation
+git switch -c feature/fastapi-foundation
 ```
 
-Use `feat/<topic>`, `fix/<topic>`, `docs/<topic>` or `chore/<topic>` as appropriate.
+Use `<type>/<short-kebab-case-description>`. Prefixes are `feature/` for new
+functionality, `fix/` for bugs, `refactor/` for behavior-preserving restructuring,
+`docs/` for documentation-only work, `test/` for tests-only work, `ci/` for workflows
+and `chore/` for maintenance such as dependency, ignore-file or tooling updates.
+Choose the main purpose; a feature branch includes its own tests and documentation.
+Use `feature/` consistently instead of `feat/`. All prefixes require PR/CI checks.
 If there is uncommitted work, preserve it on its task branch before updating the
 base; do not discard it or mix unrelated changes. These commands are for the
 next clean task, not for switching away from the current pending work.
@@ -229,16 +278,13 @@ Local verification passed all 87 tests on Windows. The sandbox's temporary
 directory initially prevented test setup; the unrestricted rerun passed without
 code changes. Linux execution and Actions orchestration await the first PR run.
 
-**Pending:** push branch `chore/tests-ci` and open a PR targeting `main`, then
-verify that GitHub runs `tests` successfully. This branch includes the previous
-local contracts commit because it is based on `chore/github-workflow-policy`;
-review the whole PR diff if that commit is not yet on remote `main`.
-No commit, push, PR, merge or repository-settings change was performed here.
-Configure the `main` rule to require PRs and the actual `tests` status check,
-require an up-to-date branch, and restrict direct pushes/bypasses. Remote rules
-have not been inspected; local passes do not prove enforcement. Step 1.5 remains
-in progress until the GitHub run and merge gate are verified. Database
-integration checks join the gate when steps 1.7–1.9 introduce that functionality.
+**Delivered:** [PR #2](https://github.com/Agent-Tool-Use-Guardrail-Monitor-ATGM/datalens-agent/pull/2)
+merged the contracts and workflow into `main` with a successful `tests` run.
+The user confirmed repository settings were ready before step 1.6; effective
+remote rules were not independently audited. The old policy branch was removed
+and PR #1 closed. Keep `tests` required, require a PR and an up-to-date branch,
+and restrict direct pushes/bypasses. Step 1.6 has only local verification until
+its own PR runs CI. Database integration checks join the gate in steps 1.7–1.9.
 
 Planning documents in the parent workspace are outside this Git repository and
 will not appear in its PR. Changes to them are reported separately until they
