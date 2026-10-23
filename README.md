@@ -51,7 +51,7 @@ No global execution-policy change is required.
 `requirements.txt` is the only application/development dependency list. It pins
 checked direct versions; pip resolves their transitive dependencies. It does not
 record Python, operating-system libraries or exact transitive versions. Fresh
-setup is verified in step 1.9 and Linux deployment in plan 10. No Conda YAML or
+setup is verified in step 1.10 and Linux deployment in plan 10. No Conda YAML or
 additional dependency lockfiles are maintained.
 
 `pyproject.toml` contains package/build metadata and pytest/Ruff configuration,
@@ -102,16 +102,58 @@ should use this loader instead of logging raw Pydantic validation errors. Only
 the database integration should explicitly extract the URL with
 `settings.database_url.get_secret_value()`; never log or serialize that value.
 
-The application factory will load and share one settings object in step 1.5;
-timeout enforcement and database connections are wired in step 1.6. This step
+The application factory will load and share one settings object in step 1.6;
+timeout enforcement and database connections are wired in step 1.7. This step
 validates their configuration only. There is no startup command yet.
+
+## Shared contracts — step 1.4
+
+`statistics_agent.contracts` provides immutable principal/auth-session,
+configuration and artifact references; HTTP error envelopes and request-ID
+resolution; and the versioned event envelope. Importing contracts does not load
+settings or contact infrastructure. Identity references must still come from
+verified claims in plan 3; constructing a principal is not authentication.
+
+`EventEnvelope` schema version `"1.0"` supports exactly the seven lifecycle names
+in `EventType`. Callers supply stable event/run/session UUIDs and a positive
+session sequence; parsing never invents a missing event ID. Timezone-aware
+timestamps normalize to UTC. Provider IDs belong in separate payload fields,
+not the application identifier fields. Sequence allocation and durable delivery
+remain plan 7 work.
+
+The `data` object is ordinary JSON, limited to 16384 encoded UTF-8 bytes and
+nesting depth 16. Non-finite numbers and non-JSON objects are rejected. Size,
+nesting and JSON checks also run at serialization to catch nested mutations.
+Oversized evidence must use a restricted artifact reference in its owning plan;
+it is not silently truncated. Unknown tool names and malformed argument strings
+are valid evidence and are preserved verbatim. Event-specific payload schemas
+are defined in plans 4/7; no executable tool validation happens here. Producers
+must redact credentials and sensitive data before constructing events; these
+structural contracts cannot detect secrets embedded in arbitrary text.
+
+`ErrorEnvelope` contains `code`, server-authored `message`, UUID `request_id`
+and at most 20 validation details. Each detail has a trusted schema location of
+at most eight field-name/index parts and a safe error code, without rejected
+values or exception context. The HTTP handlers in step 1.6 will supply safe
+messages and locations rather than copying raw validation errors.
+`resolve_request_id` accepts canonical 36-character UUID headers and otherwise
+generates a new UUID. Header wiring and response propagation also belong to 1.6.
+
+`tests/fixtures/events_v1.json` contains seven independent wire examples for
+serialization compatibility, not a complete execution trace. Unknown usage
+remains `null`. Unknown top-level fields/versions are rejected; adding fields
+requires compatible readers before producer rollout, or a schema-version change.
 
 ## Development status
 
-Steps 1.1–1.3 are complete. Step 1.4 and later functionality remain pending.
+Steps 1.1–1.4 are locally complete; outstanding 1.4 contract changes still need
+PR/CI verification. Next is 1.5, GitHub Actions and the protected-main workflow.
+FastAPI lifecycle/errors/logging moves from 1.5 to 1.6; the other former steps
+1.6–1.9 become 1.7–1.10. API functionality remains pending.
 Configuration has 34 focused checks covering valid/invalid values, explicit
 dotenv loading, precedence, timeout relationships, secret redaction and absence
-of import/load network side effects. From the service directory:
+of import/load network side effects. Contracts add 53 checks, bringing the
+current suite to 87 passing tests. From the service directory:
 
 ```powershell
 python -m ruff check .
@@ -131,17 +173,61 @@ this repository. Do not initialize the parent workspace just to track this agent
 The service-level `.gitignore` excludes `.venv`, caches, build/coverage output,
 logs and dotenv secrets while retaining `.env.example`.
 
-From `services/datalens-agent/`, review and create the first commit:
+The GitHub remote is already configured at
+[datalens-agent](https://github.com/Agent-Tool-Use-Guardrail-Monitor-ATGM/datalens-agent).
+Every change, including basic setup, documentation and workflow files, uses a
+separate branch and a PR targeting `main`. Never commit or push directly to
+`main`. The persistent rules are in [AGENTS.md](AGENTS.md).
+
+For a new task, start from a clean working tree and an updated `main`:
 
 ```powershell
 git status
-git add .gitignore .env.example pyproject.toml requirements.txt README.md src tests
-git diff --cached --stat
-git commit -m "Initialize DataLens agent foundation"
+git switch main
+git pull --ff-only origin main
+git switch -c feat/fastapi-foundation
 ```
 
-To publish, create an empty remote repository, for example `datalens-agent`, in
-your Git hosting account. Connect its provided URL with `git remote add origin
-<REPOSITORY_URL>`, then push the current branch using `git push -u origin HEAD`.
-Replace the placeholder URL before running the command. No remote, staging,
-commit or push is performed by adding the ignore file.
+Use `feat/<topic>`, `fix/<topic>`, `docs/<topic>` or `chore/<topic>` as appropriate.
+If there is uncommitted work, preserve it on its task branch before updating the
+base; do not discard it or mix unrelated changes. These commands are for the
+next clean task, not for switching away from the current pending work.
+
+Run the checks listed above, review the diff, and stage only intended files.
+When authorized to publish, commit on the task branch and push that branch:
+
+```powershell
+git branch --show-current
+git diff --cached
+git commit -m "Add FastAPI service foundation"
+git push -u origin HEAD
+```
+
+Confirm the displayed branch is the task branch before committing. Open a PR
+with base `main` using GitHub or `gh pr create --base main`. Merge only after all
+required checks pass for the latest PR revision and the branch satisfies the
+repository rules. Changes to a PR must pass the checks again. After merge, update
+local `main` and create a new task branch for the next step.
+
+### GitHub Actions and merge-gate status
+
+**Pending:** `.github/workflows/ci.yml` does not exist yet, and remote branch
+rules have not been inspected or configured. Local checks do not prove GitHub
+enforcement. The next implementation step, 1.5, creates the workflow and verifies
+the `main` rule; no commit, push, PR or merge was performed during this planning
+update. Current branch `chore/github-workflow-policy` preserves earlier pending
+1.4 work alongside these documentation changes; review their scope before
+committing, or publish them as separate PRs in dependency order.
+
+The planned required job is `quality`, running on every PR to `main` and again
+on `main` after merges. It uses a clean Linux runner and Python 3.12, installs
+`requirements.txt` and the local package, then checks dependencies, lint,
+formatting and pytest. No application secrets are required. The GitHub `main`
+rule must require a PR and successful checks, require the branch to be current,
+and restrict direct pushes/bypasses. The exact check name and effective settings
+must be verified on GitHub before calling the merge gate complete. Database
+integration checks join the gate when steps 1.7–1.9 introduce that functionality.
+
+Planning documents in the parent workspace are outside this Git repository and
+will not appear in its PR. Changes to them are reported separately until they
+have their own version-control location.

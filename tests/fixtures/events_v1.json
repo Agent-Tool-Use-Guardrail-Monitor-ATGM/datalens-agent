@@ -1,0 +1,120 @@
+[
+  {
+    "schema_version": "1.0",
+    "event_id": "00000000-0000-4000-8000-000000000001",
+    "event_type": "session.started",
+    "occurred_at": "2026-10-21T12:00:00Z",
+    "run_id": "00000000-0000-4000-8000-000000000100",
+    "session_id": "00000000-0000-4000-8000-000000000101",
+    "sequence": 1,
+    "request_id": "00000000-0000-4000-8000-000000000102",
+    "data": {
+      "provider": "test-provider",
+      "configuration": {
+        "config_id": "00000000-0000-4000-8000-000000000105",
+        "version": "test-v1"
+      }
+    }
+  },
+  {
+    "schema_version": "1.0",
+    "event_id": "00000000-0000-4000-8000-000000000002",
+    "event_type": "tool_call.requested",
+    "occurred_at": "2026-10-21T12:00:00Z",
+    "run_id": "00000000-0000-4000-8000-000000000100",
+    "session_id": "00000000-0000-4000-8000-000000000101",
+    "sequence": 2,
+    "request_id": "00000000-0000-4000-8000-000000000102",
+    "data": {
+      "call_id": "00000000-0000-4000-8000-000000000201",
+      "step_idx": 1,
+      "model_call_id": "00000000-0000-4000-8000-000000000301",
+      "provider_tool_call_id": "provider-call-17",
+      "proposed_name": "unknown_statistics_tool",
+      "arguments": "{\"column\":"
+    }
+  },
+  {
+    "schema_version": "1.0",
+    "event_id": "00000000-0000-4000-8000-000000000003",
+    "event_type": "tool_call.completed",
+    "occurred_at": "2026-10-21T12:00:00Z",
+    "run_id": "00000000-0000-4000-8000-000000000100",
+    "session_id": "00000000-0000-4000-8000-000000000101",
+    "sequence": 3,
+    "request_id": "00000000-0000-4000-8000-000000000102",
+    "data": {
+      "call_id": "00000000-0000-4000-8000-000000000202",
+      "step_idx": 2,
+      "duration_ms": 12,
+      "result": {
+        "artifact_id": "00000000-0000-4000-8000-000000000401",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "media_type": "application/json"
+      }
+    }
+  },
+  {
+    "schema_version": "1.0",
+    "event_id": "00000000-0000-4000-8000-000000000004",
+    "event_type": "tool_call.failed",
+    "occurred_at": "2026-10-21T12:00:00Z",
+    "run_id": "00000000-0000-4000-8000-000000000100",
+    "session_id": "00000000-0000-4000-8000-000000000101",
+    "sequence": 4,
+    "request_id": "00000000-0000-4000-8000-000000000102",
+    "data": {
+      "call_id": "00000000-0000-4000-8000-000000000201",
+      "step_idx": 1,
+      "reason": "invalid_arguments"
+    }
+  },
+  {
+    "schema_version": "1.0",
+    "event_id": "00000000-0000-4000-8000-000000000005",
+    "event_type": "model_call.completed",
+    "occurred_at": "2026-10-21T12:00:00Z",
+    "run_id": "00000000-0000-4000-8000-000000000100",
+    "session_id": "00000000-0000-4000-8000-000000000101",
+    "sequence": 5,
+    "request_id": "00000000-0000-4000-8000-000000000102",
+    "data": {
+      "model_call_id": "00000000-0000-4000-8000-000000000301",
+      "attempt_idx": 1,
+      "usage": null
+    }
+  },
+  {
+    "schema_version": "1.0",
+    "event_id": "00000000-0000-4000-8000-000000000006",
+    "event_type": "model_call.failed",
+    "occurred_at": "2026-10-21T12:00:00Z",
+    "run_id": "00000000-0000-4000-8000-000000000100",
+    "session_id": "00000000-0000-4000-8000-000000000101",
+    "sequence": 6,
+    "request_id": "00000000-0000-4000-8000-000000000102",
+    "data": {
+      "model_call_id": "00000000-0000-4000-8000-000000000302",
+      "attempt_idx": 1,
+      "error_code": "rate_limited"
+    }
+  },
+  {
+    "schema_version": "1.0",
+    "event_id": "00000000-0000-4000-8000-000000000007",
+    "event_type": "session.ended",
+    "occurred_at": "2026-10-21T12:00:00Z",
+    "run_id": "00000000-0000-4000-8000-000000000100",
+    "session_id": "00000000-0000-4000-8000-000000000101",
+    "sequence": 7,
+    "request_id": "00000000-0000-4000-8000-000000000102",
+    "data": {
+      "status": "completed",
+      "result": {
+        "artifact_id": "00000000-0000-4000-8000-000000000401",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "media_type": "application/json"
+      }
+    }
+  }
+]
