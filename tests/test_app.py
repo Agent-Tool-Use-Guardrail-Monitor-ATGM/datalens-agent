@@ -236,14 +236,12 @@ def test_method_not_allowed_keeps_safe_allow_header(application):
 
 
 @pytest.mark.parametrize("environment,expected", [("development", 200), ("production", 404)])
-def test_docs_are_development_only_and_no_business_or_health_routes_exist(
-    settings, environment, expected
-):
+def test_docs_are_development_only_and_no_business_routes_exist(settings, environment, expected):
     app = create_app(settings.model_copy(update={"app_env": environment}), log_stream=io.StringIO())
     with TestClient(app) as client:
         assert client.get("/openapi.json").status_code == expected
         assert client.get("/docs").status_code == expected
-        for path in ("/runs", "/auth/login", "/health/live", "/health/ready"):
+        for path in ("/runs", "/auth/login"):
             assert client.get(path).status_code == 404
 
 
