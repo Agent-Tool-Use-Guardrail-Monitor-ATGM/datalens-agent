@@ -86,7 +86,7 @@ Kafka credentials are needed for foundation configuration.
 |---|---|---|
 | `DATABASE_URL` | Required | `postgresql+psycopg://...` with host, username and database; 1–4096 characters |
 | `APP_ENV` | `development` | `development`, `test`, `staging`, `production` |
-| `SERVICE_NAME` | `agent-api` | `agent-api` or future `agent-worker` process role |
+| `SERVICE_NAME` | `datalens-agent-api` | `datalens-agent-api` or future `datalens-agent-worker` process role |
 | `SERVICE_VERSION` | `0.1.0` | 1–64 characters, starting with a digit; version-safe letters/numbers and `.+_-` |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
 | `DB_POOL_SIZE` | `5` | 1–20 connections |
@@ -94,6 +94,12 @@ Kafka credentials are needed for foundation configuration.
 | `DB_POOL_TIMEOUT_SECONDS` | `10` | 0.1–60 seconds |
 | `DB_STATEMENT_TIMEOUT_MS` | `10000` | 100–300000 milliseconds |
 | `DB_HEALTH_TIMEOUT_SECONDS` | `2` | 0.05–10 seconds; strictly below connect, pool and statement timeouts |
+
+Process names use the shared `datalens-` prefix. Existing SERVICE_NAME values
+`agent-api` and `agent-worker` remain accepted as input aliases and normalize to
+`datalens-agent-api` and `datalens-agent-worker` in settings, serialization and
+logs. New configuration must use the canonical values above. Python imports
+remain `statistics_agent`; database identifiers remain `agent_db`/`agent_test_db`.
 
 Settings are immutable. The database URL is secret-bearing and excluded from
 settings repr/dumps/JSON. `load_settings` raises `ConfigurationError` with safe
@@ -203,7 +209,7 @@ No separate database code repository or custom PostgreSQL image is introduced.
 ### Local database
 
 [compose.yaml](compose.yaml) uses the official `postgres:17.11-bookworm` image,
-service `agent-postgres`, database `agent_db`, user `agent_local`, and named volume
+service `datalens-agent-postgres`, database `agent_db`, user `agent_local`, and named volume
 `datalens-agent-local_agent-postgres-data`. The host port is bound to loopback
 only, default `127.0.0.1:54329`. Local Docker users can still administer containers;
 loopback binding is not a replacement for database authentication.
@@ -418,13 +424,36 @@ failure, development documentation and low-volume probe logging. Ruff lint/forma
 and dependency consistency pass; one existing TestClient/HTTPX warning remains.
 No dependency, Docker image, cloud resource or additional CI job was introduced.
 
+## Naming update — 23 October 2026
+
+On `refactor/datalens-service-names`, all owned process/Compose service names
+use `datalens-`: API/worker, persistent database and disposable test database.
+The identity repository folder is now `services/datalens-identity/`.
+This does not rename upstream image repositories, database identifiers or the
+Python package, and it does not add business functionality.
+
+The volume keeps its existing Compose ownership key; its explicit physical name
+is `datalens-agent-local_agent-postgres-data`, preserving existing local data and
+ownership labels. Rendering was checked without changing the persistent database. An already
+running old-name container is left untouched; after merging, stop the local API
+and use `docker compose --env-file .env.postgres down --remove-orphans` followed by
+`docker compose --env-file .env.postgres up -d --wait` when ready to switch it.
+Never add `--volumes`/`-v` to that operation.
+
+Before the rename, all 150 tests passed. Afterward, **154 tests pass**, including
+four cases proving canonical and legacy process inputs normalize correctly.
+Ruff lint/format pass; one existing TestClient/HTTPX warning remains. The tests
+used the renamed disposable PostgreSQL service; persistent data was not changed.
+No implementation commit, push or PR was performed; required GitHub CI is pending.
+
 ## Development status
 
-Steps 1.1–1.8 are merged into main. Step 1.9 is locally complete on
-`feature/health-checks`, pending commit/PR/CI delivery. All 150 tests pass against
-disposable PostgreSQL, including 12 new health checks. Ruff lint/format and
-`pip check` pass; one existing upstream TestClient/HTTPX warning remains.
-Next is 1.10, reproducibility and foundation sign-off, only when requested.
+Steps 1.1–1.9 are merged into main; health PR #6 reached `58da046` with
+successful required tests. The naming branch has 154 passing tests; main's
+pre-rename suite had 150. Step 1.10 has local fresh-environment evidence, but its
+separate verification document is absent from fetched main; documentation
+delivery/final sign-off remain pending. This naming PR does not publish it or
+implement the next identity step.
 Missing TEST_DATABASE_URL skips marked checks locally and fails them in CI;
 skipped database tests must not be reported as passed. From the service directory:
 
@@ -434,7 +463,7 @@ python -m ruff format --check src tests
 python -m pytest -q
 ```
 
-Identity configuration belongs in `services/identity/` when plan 2 starts.
+Identity configuration belongs in `services/datalens-identity/` when plan 2 starts.
 Keycloak owns the separate `identity_db`; agent migrations do not manage it.
 Credentials belong in ignored local configuration or deployment secret injection.
 
@@ -500,8 +529,9 @@ PR #2 delivered the initial workflow and contracts with passing GitHub checks;
 step 1.6 is also merged into origin/main. The user confirmed prerequisite branch
 protection; effective remote rules were not independently audited. Keep `tests`
 required, require PRs and an up-to-date branch, and restrict direct-push/bypass
-permissions. Steps 1.7 and 1.8 are merged into fetched origin/main. Step 1.9 has local
-evidence only until its PR runs CI; nothing was staged, committed, pushed or merged here.
+permissions. Steps 1.7–1.9 are merged into fetched origin/main. The naming refactor requires
+its own PR and latest-revision tests; nothing was staged, committed, pushed or
+merged during this change.
 
 Planning documents in the parent workspace are outside this Git repository and
 will not appear in its PR. Changes to them are reported separately until they

@@ -28,8 +28,8 @@ class Settings(BaseSettings):
     app_env: Literal["development", "test", "staging", "production"] = Field(
         default="development", validation_alias="APP_ENV"
     )
-    service_name: Literal["agent-api", "agent-worker"] = Field(
-        default="agent-api", validation_alias="SERVICE_NAME"
+    service_name: Literal["datalens-agent-api", "datalens-agent-worker"] = Field(
+        default="datalens-agent-api", validation_alias="SERVICE_NAME"
     )
     service_version: str = Field(
         default="0.1.0",
@@ -61,6 +61,17 @@ class Settings(BaseSettings):
         allow_inf_nan=False,
         validation_alias="DB_HEALTH_TIMEOUT_SECONDS",
     )
+
+    @field_validator("service_name", mode="before")
+    @classmethod
+    def normalize_service_name(cls, value: object) -> object:
+        # Existing local env files remain usable while all emitted names are canonical.
+        if isinstance(value, str):
+            return {
+                "agent-api": "datalens-agent-api",
+                "agent-worker": "datalens-agent-worker",
+            }.get(value, value)
+        return value
 
     @field_validator("database_url")
     @classmethod

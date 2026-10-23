@@ -2,7 +2,7 @@
 name: datalens-agent-local
 
 services:
-  agent-postgres:
+  datalens-agent-postgres:
     image: postgres:17.11-bookworm
     environment:
       POSTGRES_DB: agent_db
@@ -20,3 +20,5 @@ services:
 
 volumes:
   agent-postgres-data:
+    # Preserve the existing name and Compose ownership labels while renaming the service.
+    name: datalens-agent-local_agent-postgres-data
