@@ -304,17 +304,85 @@ the persistent local agent database remains running.
 Sources: [SQLAlchemy async sessions](https://docs.sqlalchemy.org/en/20/orm/extensions/asyncio.html),
 [official PostgreSQL image and initialization](https://hub.docker.com/_/postgres),
 [Psycopg Windows asyncio requirements](https://www.psycopg.org/psycopg3/docs/advanced/async.html).
-Alembic migrations remain step 1.8; no business tables were added in 1.7.
+Step 1.8 now supplies an explicit empty baseline; no business tables were added.
+
+## Alembic baseline and schema gate — step 1.8
+
+Migration scripts live inside `src/statistics_agent/persistence/migrations/`, so
+they ship in the application package. `alembic.ini` points to that package and
+contains no credentials. `Base.metadata` in `persistence/models.py` is currently
+empty; future agent models use it. Keycloak manages its own schema separately.
+The explicit baseline revision is `0001_agent_baseline`. Upgrading an empty
+agent database creates only `alembic_version`; no user, identity, dataset, run or
+outbox tables are created. Repeating the upgrade is harmless at this revision.
+No migration, stamp or schema repair runs during API/worker startup.
+
+From the service directory with `.venv` activated, initialize local agent storage:
+
+```powershell
+python -m statistics_agent.persistence.migrate upgrade --env-file .env
+python -m statistics_agent.persistence.migrate check --env-file .env
+```
+
+Without `--env-file`, commands use injected process variables only. Commands
+return exit code 0 for success and 1 for a mismatch/failure. Output uses fixed
+safe messages, never URLs, SQL, raw exceptions or rejected values. The check
+is read-only: it compares database heads with the packaged migration heads,
+without creating a version table or silently stamping an unknown revision.
+`read_schema_status(connection)` is also available for the readiness check in
+1.9; HTTP health routes are not added here. Offline SQL generation needs no DB:
+
+```powershell
+python -m alembic upgrade head --sql
+```
+
+The wrapper accepts only canonical agent database names `agent_db` and
+`agent_test_db`; the online Alembic environment also validates current_database()
+before DDL. Identity/unrelated targets are rejected. This is a configuration
+safeguard, not a substitute for separate deployment credentials/network access.
+No identity service/database was contacted during verification.
+
+Downgrade verification belongs only on the explicitly disposable test database.
+With APP_ENV=test and DATABASE_URL pointing to agent_test_db, the wrapper offers
+`python -m statistics_agent.persistence.migrate downgrade-test`. This returns to
+base and may leave an empty Alembic version table. The wrapper rejects this
+operation for persistent agent_db. Raw Alembic administration remains powerful;
+never use it to casually downgrade deployed data. Later revisions must specify
+compatibility and recovery; rolling back an app image does not undo a migration.
+
+The release design runs one migration job before rolling out the application,
+not a migration in every API replica. The deployment pipeline must serialize
+release/migration jobs. That Azure/Kubernetes automation is not implemented here.
+
+Verification: **138 tests pass**, including 16 new migration checks. Real
+PostgreSQL tests cover empty-schema upgrade, repeated upgrade, downgrade and
+re-upgrade, an unknown revision, failed-DDL rollback and explicit dotenv-backed
+CLI execution. Tests use disposable agent_test_db and isolated random schemas;
+production/local agent data is never used for rollback tests. The wheel was
+built and inspected for env/template/baseline files, and revision generation
+from the template succeeded. Ruff lint/format and `pip check` pass. One existing
+TestClient/HTTPX warning remains. The existing required `tests` CI job discovers
+these checks automatically; this branch's GitHub run remains pending.
+
+Local persistent agent_db was checked without changes and currently reports a
+schema mismatch because its baseline has not been applied. Run the explicit
+upgrade command above when ready to initialize it. No migration was applied to
+that persistent database during this implementation. Disposable test resources
+were removed afterward. No new dependency, Dockerfile, deployment or health
+route was introduced. Implementation branch: `feature/alembic-baseline`.
+
+Sources: [Alembic async/connection sharing](https://alembic.sqlalchemy.org/en/latest/cookbook.html#using-asyncio-with-alembic),
+[revision inspection](https://alembic.sqlalchemy.org/en/latest/api/runtime.html#alembic.runtime.migration.MigrationContext.get_current_heads).
 
 ## Development status
 
-Steps 1.1–1.6 are merged into `main`. Step 1.7 is locally complete on
-`feature/postgres-foundation`, awaiting commit/PR/CI delivery. Local verification
-passes 122 tests: 111 earlier checks and 11 real PostgreSQL integration checks.
-Ruff lint/format and `pip check` pass. One existing upstream TestClient/HTTPX
-warning remains. Next implementation, when requested, is 1.8 (Alembic baseline).
-Use the database test setup below for the full suite; without TEST_DATABASE_URL,
-local database tests are explicitly skipped and must not be counted as passed. From the service directory:
+Steps 1.1–1.7 are merged into main. Step 1.8 is locally complete on
+`feature/alembic-baseline`, pending commit/PR/CI delivery. The full suite passes
+138 tests against disposable PostgreSQL (122 earlier checks and 16 migration
+checks). Ruff lint/format and dependency consistency pass. The existing upstream
+TestClient/HTTPX warning remains. Next implementation is 1.9, liveness/readiness,
+only when requested. Without TEST_DATABASE_URL, marked PostgreSQL checks skip
+locally; these skips are not counted as passes and are forbidden in CI. From the service directory:
 
 ```powershell
 python -m ruff check .
@@ -388,8 +456,8 @@ PR #2 delivered the initial workflow and contracts with passing GitHub checks;
 step 1.6 is also merged into origin/main. The user confirmed prerequisite branch
 protection; effective remote rules were not independently audited. Keep `tests`
 required, require PRs and an up-to-date branch, and restrict direct-push/bypass
-permissions. Step 1.7 on `feature/postgres-foundation` has local evidence only
-until its own PR runs CI; nothing was staged, committed, pushed or merged here.
+permissions. Step 1.7 is now merged into fetched origin/main. Step 1.8 has local evidence
+only until its PR runs CI; nothing was staged, committed, pushed or merged here.
 
 Planning documents in the parent workspace are outside this Git repository and
 will not appear in its PR. Changes to them are reported separately until they
