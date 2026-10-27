@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 10
 
     services:
-      datalens-agent-test-postgres:
+      agent-test-postgres:
         image: postgres:17.11-bookworm
         env:
           POSTGRES_DB: agent_test_db

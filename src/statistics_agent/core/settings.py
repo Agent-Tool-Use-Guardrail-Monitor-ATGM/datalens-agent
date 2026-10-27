@@ -28,8 +28,8 @@ class Settings(BaseSettings):
     app_env: Literal["development", "test", "staging", "production"] = Field(
         default="development", validation_alias="APP_ENV"
     )
-    service_name: Literal["datalens-agent-api", "datalens-agent-worker"] = Field(
-        default="datalens-agent-api", validation_alias="SERVICE_NAME"
+    service_name: Literal["agent-api", "agent-worker"] = Field(
+        default="agent-api", validation_alias="SERVICE_NAME"
     )
     service_version: str = Field(
         default="0.1.0",
@@ -68,8 +68,8 @@ class Settings(BaseSettings):
         # Existing local env files remain usable while all emitted names are canonical.
         if isinstance(value, str):
             return {
-                "agent-api": "datalens-agent-api",
-                "agent-worker": "datalens-agent-worker",
+                "datalens-agent-api": "agent-api",
+                "datalens-agent-worker": "agent-worker",
             }.get(value, value)
         return value
 
