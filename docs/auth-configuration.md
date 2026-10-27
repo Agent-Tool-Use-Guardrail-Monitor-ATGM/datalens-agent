@@ -99,7 +99,7 @@ sensitive. Secrets must remain separate from PostgreSQL backups and client code.
 
 `AuthorizedPrincipal` extends existing issuer/subject and opaque session-reference
 contracts with immutable known roles and strict verified-email=true. Constructing
-one does not authenticate a caller; only future validated live checks may supply
+one does not authenticate a caller; only future local JWT validation and local session checks may supply
 it. `AuthFailure` supplies fixed login_required/401, access_denied/403 and
 identity_unavailable/503 information for later mapping into the existing safe
 HTTP envelope. No arbitrary provider response/error body is accepted.
@@ -117,3 +117,17 @@ Next is 3.2, only after this step's PR/required CI and a separate request.
 Sources: [PyJWT validation](https://pyjwt.readthedocs.io/en/stable/api.html),
 [Fernet](https://cryptography.io/en/stable/fernet/),
 [pinned Keycloak signature default](https://github.com/keycloak/keycloak/blob/26.8.1/server-spi-private/src/main/java/org/keycloak/models/Constants.java).
+
+
+## Authorization-policy revision — 27 October 2026
+
+The plan now uses local JWT authorization with trusted cached public keys and
+five-minute access tokens. No per-request introspection. Existing 3.1 types,
+RS256 policy, secret references and provider endpoint metadata remain usable; the
+introspection endpoint is retained for compatibility/diagnostics, not normal API
+requests. Plan 3.3–3.6 will implement the cache, validate each token, test bounded
+role-change delay and allow valid-token work during identity outage when its key
+is still trusted. Cache trust is bounded to one hour; unknown/expired trust and
+required renewal still need identity connectivity. Local logout remains immediate.
+Browser cookies, encrypted server tokens, refresh coordination and CSRF remain.
+No runtime code, dependency or test changed in this documentation revision.
