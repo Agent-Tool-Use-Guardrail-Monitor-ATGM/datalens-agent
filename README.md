@@ -86,7 +86,7 @@ Kafka credentials are needed for foundation configuration.
 |---|---|---|
 | `DATABASE_URL` | Required | `postgresql+psycopg://...` with host, username and database; 1–4096 characters |
 | `APP_ENV` | `development` | `development`, `test`, `staging`, `production` |
-| `SERVICE_NAME` | `datalens-agent-api` | `datalens-agent-api` or future `datalens-agent-worker` process role |
+| `SERVICE_NAME` | `agent-api` | `agent-api` or future `agent-worker` process role |
 | `SERVICE_VERSION` | `0.1.0` | 1–64 characters, starting with a digit; version-safe letters/numbers and `.+_-` |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
 | `DB_POOL_SIZE` | `5` | 1–20 connections |
@@ -95,9 +95,9 @@ Kafka credentials are needed for foundation configuration.
 | `DB_STATEMENT_TIMEOUT_MS` | `10000` | 100–300000 milliseconds |
 | `DB_HEALTH_TIMEOUT_SECONDS` | `2` | 0.05–10 seconds; strictly below connect, pool and statement timeouts |
 
-Process names use the shared `datalens-` prefix. Existing SERVICE_NAME values
-`agent-api` and `agent-worker` remain accepted as input aliases and normalize to
-`datalens-agent-api` and `datalens-agent-worker` in settings, serialization and
+Process names are `agent-api` and `agent-worker`, independent of the repository name. Legacy prefixed SERVICE_NAME values
+`datalens-agent-api` and `datalens-agent-worker` remain accepted as input aliases and normalize to
+`agent-api` and `agent-worker` in settings, serialization and
 logs. New configuration must use the canonical values above. Python imports
 remain `statistics_agent`; database identifiers remain `agent_db`/`agent_test_db`.
 
@@ -209,7 +209,7 @@ No separate database code repository or custom PostgreSQL image is introduced.
 ### Local database
 
 [compose.yaml](compose.yaml) uses the official `postgres:17.11-bookworm` image,
-service `datalens-agent-postgres`, database `agent_db`, user `agent_local`, and named volume
+service `agent-postgres`, database `agent_db`, user `agent_local`, and named volume
 `datalens-agent-local_agent-postgres-data`. The host port is bound to loopback
 only, default `127.0.0.1:54329`. Local Docker users can still administer containers;
 loopback binding is not a replacement for database authentication.
@@ -536,3 +536,34 @@ merged during this change.
 Planning documents in the parent workspace are outside this Git repository and
 will not appear in its PR. Changes to them are reported separately until they
 have their own version-control location.
+
+
+Internal service names are logical and omit the product prefix. Repository and
+folder names retain `datalens-`; Compose projects retain environment scope.
+Existing physical volume names are preserved to avoid replacing stored data.
+
+
+## Authentication configuration — step 3.1
+
+Implemented locally on `feature/auth-configuration`. See
+[configuration, secret formats and verification](docs/auth-configuration.md).
+New opt-in `AuthSettings`, explicit secret-file loading and immutable safe
+principal/failure contracts are available. PyJWT/cryptography are pinned in the
+existing requirements.txt; `.env.auth.example` contains references only and
+`secrets/` is ignored. No real credentials were generated or read.
+
+The FastAPI factory does not load auth configuration yet. No new route, session
+storage, migration, login, refresh or permission enforcement is implemented;
+existing health behavior remains intact. Docker stayed closed. The local
+`datalens` realm still needs operator onboarding before live integration.
+
+Focused tests: **47 passed**. Complete non-database regression selection:
+**181 passed; 20 PostgreSQL tests deselected**. Ruff/format/pip checks and in-memory
+RS256/Fernet compatibility checks passed. One existing Starlette/HTTPX warning
+remains. No live Keycloak/database suite or prior remote checks were repeated.
+
+Pre-existing naming edits in this checkout were preserved. No changes were staged,
+committed or pushed. Separate those edits from this feature before publication;
+do not assume the whole working-tree diff belongs to 3.1. Service documentation
+and implementation belong in its PR; parent planning files remain outside Git.
+Next is 3.2 only after PR/required CI and a separate request.

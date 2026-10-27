@@ -31,7 +31,7 @@ def database_environment(monkeypatch):
 def test_minimum_settings_require_no_other_service_credentials(database_environment):
     settings = load_settings()
     assert settings.app_env == "development"
-    assert settings.service_name == "datalens-agent-api"
+    assert settings.service_name == "agent-api"
     assert settings.database_url.get_secret_value() == DATABASE_URL
     assert settings.db_health_timeout_seconds < settings.db_connect_timeout_seconds
     assert settings.db_health_timeout_seconds < settings.db_pool_timeout_seconds
@@ -43,10 +43,10 @@ def test_minimum_settings_require_no_other_service_credentials(database_environm
 @pytest.mark.parametrize(
     "supplied,canonical",
     [
-        ("agent-api", "datalens-agent-api"),
-        ("agent-worker", "datalens-agent-worker"),
-        ("datalens-agent-api", "datalens-agent-api"),
-        ("datalens-agent-worker", "datalens-agent-worker"),
+        ("datalens-agent-api", "agent-api"),
+        ("datalens-agent-worker", "agent-worker"),
+        ("agent-api", "agent-api"),
+        ("agent-worker", "agent-worker"),
     ],
 )
 def test_service_names_are_canonical_in_settings_and_serialization(

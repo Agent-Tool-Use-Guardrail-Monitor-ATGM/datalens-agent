@@ -91,7 +91,7 @@ def test_factory_and_lifecycle_do_not_connect_and_use_one_settings_object(settin
     assert [event["event"] for event in events] == ["service_started", "service_stopped"]
     assert SECRET not in output.getvalue()
     for event in events:
-        assert event["service"] == "datalens-agent-api"
+        assert event["service"] == "agent-api"
         assert event["version"] == "0.1.0"
         assert event["environment"] == "development"
         assert event["request_id"] is None

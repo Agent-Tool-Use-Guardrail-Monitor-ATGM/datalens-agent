@@ -2,7 +2,7 @@
 name: datalens-agent-local
 
 services:
-  datalens-agent-postgres:
+  agent-postgres:
     image: postgres:17.11-bookworm
     environment:
       POSTGRES_DB: agent_db
