@@ -552,7 +552,7 @@ principal/failure contracts are available. PyJWT/cryptography are pinned in the
 existing requirements.txt; `.env.auth.example` contains references only and
 `secrets/` is ignored. No real credentials were generated or read.
 
-The FastAPI factory does not load auth configuration yet. No new route, session
+At completion of step 3.1, the FastAPI factory did not load auth configuration. No new route, session
 storage, migration, login, refresh or permission enforcement is implemented;
 existing health behavior remains intact. Docker stayed closed. The local
 `datalens` realm still needs operator onboarding before live integration.
@@ -566,4 +566,43 @@ Pre-existing naming edits in this checkout were preserved. No changes were stage
 committed or pushed. Separate those edits from this feature before publication;
 do not assume the whole working-tree diff belongs to 3.1. Service documentation
 and implementation belong in its PR; parent planning files remain outside Git.
-Next is 3.2 only after PR/required CI and a separate request.
+Step 3.1 delivery is now accepted from the user's pull/check confirmation.
+
+
+## Planned local token authorization — 27 October 2026
+
+Per the revised plan, protected requests will validate signed JWTs locally using
+trusted cached keys and local session state. No per-request Keycloak introspection.
+Token lifetime stays at most five minutes (initial expiry leeway zero); remote
+role/email/account/logout changes may take until expiry to affect access. Local
+application logout still invalidates its session immediately. Known keys within
+a maximum one-hour trust lease support valid-token requests through identity
+outage; expired tokens, missing/untrusted keys, login and renewal cannot bypass
+necessary provider checks. Unknown kid/lease expiry triggers bounded key retrieval.
+No new gateway, broker or revocation service. Keep encrypted backend tokens and
+opaque cookie/CSRF design. See [the configuration guide](docs/auth-configuration.md)
+and updated identity handoff. This policy revision changed documentation only;
+active agent login and authorization remain unimplemented.
+
+## Encrypted session storage — step 3.2
+
+Implemented locally on `feature/session-storage`. See
+[storage behavior, migration and verification](docs/auth-storage.md).
+Migration `0002_auth_storage` adds agent-owned pending logins and browser sessions.
+Random browser credentials/state are hashed; OAuth tokens and nonce/PKCE material
+are encrypted with context-bound Fernet envelopes and external active/read keys.
+Repositories enforce one-use login consumption, browser binding, session deadlines,
+local revocation, version-checked credential updates and bounded explicit cleanup.
+
+All **221 tests passed**, including real disposable PostgreSQL migration and
+concurrency checks; Ruff and pip consistency checks passed. Existing required CI
+already runs the new tests. No runtime dependency or identity change was needed.
+No auth route or startup wiring was added; persistent development data was not
+migrated. Readiness requires the new migration before running this revision
+against an existing database. No real credentials were created.
+
+Existing local-token-policy documentation edits were preserved in this checkout;
+they are compatible with this step and are not claimed as separately published.
+No commit/push occurred. Parent plans are outside this repository/PR.
+Next: publish this step through a PR with required `tests`; implement 3.3 browser
+login only after a separate request.

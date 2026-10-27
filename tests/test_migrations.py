@@ -26,6 +26,7 @@ from statistics_agent.persistence.schema import (
 )
 
 BASELINE = "0001_agent_baseline"
+HEAD = "0002_auth_storage"
 
 
 def run(coroutine):
@@ -48,7 +49,7 @@ def settings():
 
 def test_single_packaged_head_needs_no_settings_or_network(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
-    assert expected_heads() == (BASELINE,)
+    assert expected_heads() == (HEAD,)
     assert migration_config().get_main_option("sqlalchemy.url") is None
 
 
@@ -159,7 +160,7 @@ def test_empty_database_upgrades_repeats_downgrades_and_reupgrades(settings):
             await apply(database, schema, config, "upgrade", "head")
             assert (await status(database, schema)).is_current
             await apply(database, schema, config, "upgrade", "head")
-            assert (await status(database, schema)).current_heads == (BASELINE,)
+            assert (await status(database, schema)).current_heads == (HEAD,)
             async with database.session() as session:
                 tables = (
                     (
@@ -174,7 +175,16 @@ def test_empty_database_upgrades_repeats_downgrades_and_reupgrades(settings):
                     .scalars()
                     .all()
                 )
-                assert tables == ["alembic_version"]
+                assert set(tables) == {"alembic_version", "auth_login_attempts", "auth_sessions"}
+            await apply(database, schema, config, "downgrade", BASELINE)
+            assert (await status(database, schema)).current_heads == (BASELINE,)
+            async with database.session() as session:
+                assert (
+                    await session.scalar(
+                        text("SELECT to_regclass(:name)"), {"name": f"{schema}.auth_sessions"}
+                    )
+                    is None
+                )
             await apply(database, schema, config, "downgrade", "base")
             assert (await status(database, schema)).current_heads == ()
             assert not (await status(database, schema)).is_current
@@ -208,7 +218,7 @@ def test_failed_upgrade_rolls_back_ddl_and_preserves_previous_revision(settings,
         """
 from alembic import op
 revision = "0002_failure"
-down_revision = "0001_agent_baseline"
+down_revision = "0002_auth_storage"
 branch_labels = depends_on = None
 def upgrade():
     op.execute("CREATE TABLE rollback_probe (id integer)")
@@ -221,11 +231,11 @@ def downgrade():
 
     async def exercise():
         async with sandbox(settings) as (database, schema, config):
-            await apply(database, schema, config, "upgrade", BASELINE)
+            await apply(database, schema, config, "upgrade", HEAD)
             config.set_main_option("script_location", str(scripts))
             with pytest.raises(RuntimeError, match="Controlled failed"):
                 await apply(database, schema, config, "upgrade", "head")
-            assert (await status(database, schema)).current_heads == (BASELINE,)
+            assert (await status(database, schema)).current_heads == (HEAD,)
             async with database.session() as session:
                 assert (
                     await session.scalar(
@@ -259,7 +269,7 @@ def test_explicit_cli_upgrade_and_check_with_local_env_file(
             await database.close()
 
     before = run(current())
-    assert before.current_heads in {(), (BASELINE,)}
+    assert before.current_heads in {(), (BASELINE,), (HEAD,)}
     try:
         assert main(["upgrade", "--env-file", str(env_file)]) == 0
         assert main(["check", "--env-file", str(env_file)]) == 0
