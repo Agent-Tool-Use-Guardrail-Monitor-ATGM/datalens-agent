@@ -1,5 +1,9 @@
 # DataLens statistics-agent development
 
+Current startup requires auth settings and protected client-secret/encryption-key
+files, in addition to DATABASE_URL. See [browser login setup](docs/browser-login.md)
+before running the API. Missing configuration fails startup; there is no bypass.
+
 ## Environment and setup
 
 Each Python service has its own standard virtual environment in its `.venv/`
@@ -604,5 +608,42 @@ against an existing database. No real credentials were created.
 Existing local-token-policy documentation edits were preserved in this checkout;
 they are compatible with this step and are not claimed as separately published.
 No commit/push occurred. Parent plans are outside this repository/PR.
-Next: publish this step through a PR with required `tests`; implement 3.3 browser
-login only after a separate request.
+Step 3.2 delivery/pull is accepted from the user confirmation; subsequent 3.3
+implementation is recorded below.
+
+
+## Browser login and callback — step 3.3
+
+Implemented locally on `feature/browser-login`. See [setup, flow and fixture
+commands](docs/browser-login.md). GET `/auth/login` redirects to Keycloak with
+browser-bound state, nonce and S256 PKCE. GET `/auth/callback` consumes the attempt,
+exchanges the code, verifies ID/access JWTs and signed email/role claims, then
+stores encrypted tokens and sets a fresh opaque HttpOnly session cookie. No
+OAuth tokens reach application responses or JavaScript. Auth responses use
+no-store/no-referrer; errors are fixed 401/403/503, or 409 for a pending login.
+
+The factory now requires auth configuration/secrets. Discovery/signing keys are
+fetched lazily, coalesced and cached for at most one hour; refresh attempts are
+limited to once per five seconds per process. Algorithms/endpoints are trusted
+configuration, never token-supplied URLs. No introspection is performed. Health
+semantics remain unchanged and startup performs no identity network request.
+
+Verification: **274 tests passed**, no skips, including eight real Chromium +
+Keycloak + PostgreSQL scenarios, 31 provider/signature/cache tests and 14 HTTP
+protocol checks. Ruff, touched-file formatting and pip consistency checks passed.
+One existing Starlette/HTTPX deprecation warning remains. Existing `tests` CI now
+installs Chromium, starts disposable Keycloak and always cleans it up. The browser
+fixture uses synthetic identities and temporary H2 storage; production identity
+PostgreSQL and real accounts were untouched. Earlier failed fixture runs involved
+a realm-import filename, redirect interception and an error-theme selector; these
+were corrected. A stale health-only OpenAPI assertion was updated for auth routes.
+
+No frontend, `/auth/me`, CSRF enforcement on protected operations, ownership,
+refresh or logout endpoint is implemented yet. Successful login redirects to `/`,
+which currently returns 404; the session cookie is created. Public protected-route
+behavior and automatic refresh remain steps 3.4/3.5, not claimed by login success.
+No real secret files were generated and no persistent database was migrated.
+
+No commit/push/remote CI result is claimed. Publish this branch through its PR
+with required `tests`. Parent plans/README remain outside service Git/PRs. Stop
+before 3.4; it requires a separate request.

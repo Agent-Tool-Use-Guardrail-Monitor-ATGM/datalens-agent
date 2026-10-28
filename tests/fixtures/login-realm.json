@@ -1,0 +1,168 @@
+{
+  "realm": "browser-test",
+  "enabled": true,
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "accessTokenLifespan": 300,
+  "sslRequired": "none",
+  "roles": {
+    "client": {
+      "agent-api": [
+        {
+          "name": "user"
+        },
+        {
+          "name": "admin",
+          "composite": true,
+          "composites": {
+            "client": {
+              "agent-api": [
+                "user"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "agent-api",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "synthetic-browser-client-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": false,
+      "redirectUris": [
+        "http://localhost:18089/auth/callback"
+      ],
+      "defaultClientScopes": [
+        "basic",
+        "email"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "agent-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "agent-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "agent-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "config": {
+            "usermodel.clientRoleMapping.clientId": "agent-api",
+            "claim.name": "resource_access.agent-api.roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "analyst",
+      "firstName": "Synthetic",
+      "lastName": "Analyst",
+      "email": "analyst@example.invalid",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Synthetic-Test-Password!29",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "agent-api": [
+          "admin"
+        ]
+      }
+    },
+    {
+      "username": "unverified",
+      "firstName": "Synthetic",
+      "lastName": "Analyst",
+      "email": "unverified@example.invalid",
+      "emailVerified": false,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Synthetic-Test-Password!29",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "agent-api": [
+          "user"
+        ]
+      }
+    },
+    {
+      "username": "roleless",
+      "firstName": "Synthetic",
+      "lastName": "Analyst",
+      "email": "roleless@example.invalid",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Synthetic-Test-Password!29",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "agent-api": []
+      }
+    },
+    {
+      "username": "disabled",
+      "firstName": "Synthetic",
+      "lastName": "Analyst",
+      "email": "disabled@example.invalid",
+      "emailVerified": true,
+      "enabled": false,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Synthetic-Test-Password!29",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "agent-api": [
+          "user"
+        ]
+      }
+    }
+  ],
+  "clientScopeMappings": {
+    "agent-api": [
+      {
+        "client": "agent-api",
+        "roles": [
+          "user",
+          "admin"
+        ]
+      }
+    ]
+  }
+}

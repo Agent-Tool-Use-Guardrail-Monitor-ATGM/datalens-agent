@@ -14,3 +14,4 @@ ruff==0.17.1
 # Authentication configuration and later JWT/session encryption.
 PyJWT[crypto]==2.15.1
 cryptography==50.0.2
+playwright==1.64.1
