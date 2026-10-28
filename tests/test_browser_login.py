@@ -163,6 +163,10 @@ def test_browser_login_success_or_safe_denial(browser_app, scenario):
                     assert response.headers["location"] == ORIGIN + "/"
                     assert len(session_cookies) == 1 and session_cookies[0]["httpOnly"]
                     assert cookie_name not in page.evaluate("document.cookie")
+                    me = context.request.get(ORIGIN + "/auth/me")
+                    assert me.status == 200
+                    assert me.json()["roles"] == ["admin", "user"]
+                    assert len(me.json()["csrf_token"]) == 64
                     replay = client.get(
                         response.url, headers={"Cookie": "agent-login-dev=" + original_binding}
                     )

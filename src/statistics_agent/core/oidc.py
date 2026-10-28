@@ -12,7 +12,7 @@ import httpx
 import jwt
 from pydantic import SecretStr
 
-from statistics_agent.contracts.auth import AuthFailureCode
+from statistics_agent.contracts.auth import AuthFailureCode, VerifiedIdentity
 from statistics_agent.contracts.common import AuthenticatedPrincipal
 from statistics_agent.core.auth import AuthSettings
 from statistics_agent.core.auth_secrets import AuthSecrets, unique_object
@@ -208,7 +208,7 @@ class OidcProvider:
             pass
         raise AuthenticationError()
 
-    async def validate_access(self, token: str) -> AuthenticatedPrincipal:
+    async def validate_access(self, token: str) -> VerifiedIdentity:
         """Reusable local validation; this does not load or authorize a browser session."""
         claims = await self._decode(token, access=True)
         verified = claims.get("email_verified")
@@ -221,7 +221,15 @@ class OidcProvider:
             raise AuthenticationError()
         if not verified or not {"user", "admin"}.intersection(roles):
             raise AuthenticationError(AuthFailureCode.ACCESS_DENIED)
-        return AuthenticatedPrincipal(issuer=claims["iss"], subject=claims["sub"])
+        permitted = {role for role in roles if role in {"user", "admin"}}
+        if "admin" in permitted:
+            permitted.add("user")
+        return VerifiedIdentity(
+            issuer=claims["iss"],
+            subject=claims["sub"],
+            roles=frozenset(permitted),
+            email_verified=True,
+        )
 
     async def exchange(self, code: str, attempt) -> VerifiedLogin:
         endpoints = await self.endpoints()

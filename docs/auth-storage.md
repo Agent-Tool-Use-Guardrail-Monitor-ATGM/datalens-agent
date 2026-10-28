@@ -2,8 +2,8 @@
 
 Step 3.2 introduced internal PostgreSQL repositories for browser sessions and
 pending logins. Step 3.3 now connects them to login/callback and startup; see
-[browser login](browser-login.md). Ongoing request authorization, automatic refresh
-and logout remain later steps. Storing a credential or constructing a principal
+[browser login](browser-login.md). Step 3.4 adds [ongoing request authorization](request-authorization.md); automatic
+refresh and logout remain later steps. Storing a credential or constructing a principal
 does not verify it. The verification evidence below records the original 3.2 step.
 
 ## Tables and migration

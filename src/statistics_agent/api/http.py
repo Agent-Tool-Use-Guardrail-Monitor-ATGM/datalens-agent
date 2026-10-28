@@ -100,7 +100,9 @@ class RequestMiddleware:
                     for key, value in message.get("headers", [])
                     if key.lower() != b"x-request-id"
                 ] + [(b"x-request-id", str(request_id).encode("ascii"))]
-                if scope.get("path", "").startswith("/auth/"):
+                if scope.get("path", "").startswith("/auth/") or scope.get("state", {}).get(
+                    "protected"
+                ):
                     message["headers"] = [
                         (key, value)
                         for key, value in message["headers"]

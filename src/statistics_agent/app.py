@@ -7,13 +7,15 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException
 
+from statistics_agent.api.auth import failure as authentication_failure
 from statistics_agent.api.auth import router as auth_router
 from statistics_agent.api.health import router as health_router
 from statistics_agent.api.http import RequestMiddleware, http_error, validation_error
+from statistics_agent.api.session import router as session_router
 from statistics_agent.core.auth import AuthSettings, load_auth_settings
 from statistics_agent.core.auth_secrets import AuthSecrets, load_auth_secrets
 from statistics_agent.core.logging import LogEvent, ServiceLog
-from statistics_agent.core.oidc import OidcProvider
+from statistics_agent.core.oidc import AuthenticationError, OidcProvider
 from statistics_agent.core.settings import ConfigurationError, Settings, load_settings
 from statistics_agent.core.token_encryption import TokenEncryption
 from statistics_agent.persistence.auth import AuthStore
@@ -80,7 +82,13 @@ def create_app(
     app.state.log = log
     app.add_exception_handler(HTTPException, http_error)
     app.add_exception_handler(RequestValidationError, validation_error)
+
+    async def auth_error(request, error):
+        return authentication_failure(request, error.code)
+
+    app.add_exception_handler(AuthenticationError, auth_error)
     app.add_middleware(RequestMiddleware, log=log)
     app.include_router(health_router)
     app.include_router(auth_router)
+    app.include_router(session_router)
     return app
