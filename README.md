@@ -775,3 +775,13 @@ provider calls. CrewAI integration and real tools remain later steps.
 
 Stop before 4.2 provider profiles/secrets. User publishes this branch through a
 PR to main; no commit, push or remote CI success is claimed here.
+
+
+## Provider profiles and secrets — step 4.2
+
+Complete locally on `feature/provider-profiles`; PR/required CI pending.
+[Model configuration](docs/model-configuration.md) defines Groq-first/Azure profiles,
+`SERVICE_MODEL_API_KEY`, bounded settings, safe errors and immutable public snapshots.
+The existing key was neither read nor sent. Loader integration/model calls remain 4.3.
+Verification: 277 passed, 101 database/browser tests deselected; Ruff/pip checks pass.
+No dependency or migration changes. Stop before 4.3.
