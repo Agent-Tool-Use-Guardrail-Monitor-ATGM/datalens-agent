@@ -757,6 +757,21 @@ The handoff documents local provisioning, same-origin frontend cookie/CSRF use,
 401/403/503 handling, agent principal/ownership rules, restart/key recovery,
 cleanup and outage bounds. No frontend or business agent was implemented.
 
-No commit/push/remote CI result is claimed. Publish `test/access-integration`
-through a PR and required `tests` before final plan 3 delivery/sign-off. Parent
-plans/README are outside service Git/PRs. Stop here; plan 4 needs a separate request.
+Step 3.6 delivery is now accepted from the user pull confirmation. Parent
+plans/README remain outside service Git/PRs.
+
+
+## Agent interfaces — step 4.1
+
+Complete locally on `feature/agent-contracts`; PR/required `tests` CI pending.
+[Agent contracts and remaining handoffs](docs/agent-contracts.md) define provider
+request/response, usage/failure, authorized context, versioned prompt/state and
+async provider/tool/policy/event interfaces. Unknown usage stays null; original
+malformed tool proposals retain identity and arguments before validation.
+
+Verification: **263 passed, 101 database/browser tests deselected**; one existing
+Starlette/HTTPX warning. No new dependencies, migrations, runtime endpoints or
+provider calls. CrewAI integration and real tools remain later steps.
+
+Stop before 4.2 provider profiles/secrets. User publishes this branch through a
+PR to main; no commit, push or remote CI success is claimed here.
