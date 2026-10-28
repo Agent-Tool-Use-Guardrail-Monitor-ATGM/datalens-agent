@@ -3,7 +3,8 @@
 Current startup requires auth settings and protected client-secret/encryption-key
 files, in addition to DATABASE_URL. See [browser login setup](docs/browser-login.md)
 before running the API. Missing configuration fails startup; there is no bypass.
-Current request/session API: [local authorization and ownership](docs/request-authorization.md).
+Current request/session API: [local authorization and ownership](docs/request-authorization.md),
+[automatic refresh/logout and required migration](docs/session-refresh-logout.md).
 
 ## Environment and setup
 
@@ -675,10 +676,50 @@ cases; no job, migration, dependency or configuration addition was necessary.
 Ordinary valid-token requests use cached trusted keys without introspection or
 identity lookup. Invalid/expired local state or tokens return 401, permission
 failures 403 and required key/DB outages safe 503. Role changes may lag until
-JWT expiry; local session revocation denies the old cookie. No automatic refresh,
-logout endpoint, dataset/run API or frontend is implemented yet. Persistent data,
+JWT expiry; local session revocation denies the old cookie. At completion of 3.4, automatic refresh/logout remained pending; step 3.5 below
+now implements them. Dataset/run APIs and frontend remain unimplemented. Persistent data,
 real accounts and identity repository were untouched.
 
 No commit/push/remote CI result is claimed. Publish `feature/token-authorization`
 through a PR and required `tests`; parent plans stay outside service Git/PRs.
-Stop before 3.5; refresh/logout requires a separate request.
+Step 3.4 delivery/pull is now accepted from the user confirmation.
+
+
+## Automatic refresh and logout — step 3.5
+
+Implemented locally on `feature/session-refresh-logout`; see
+[protocol, migration and recovery](docs/session-refresh-logout.md). An otherwise-
+valid expired JWT renews in the backend, keeping the same opaque cookie and CSRF
+proof. Fresh signed identity/role claims are validated before committing rotated
+credentials. Permission/signature/owner failures do not initiate renewal.
+
+Migration `0003_refresh_claim` adds a durable claim protected by short PostgreSQL
+row locks. One replica exchanges a refresh credential; others use its stored
+replacement. No network call holds a DB transaction open. A crash, uncertain
+response or failed commit never causes reuse of the old refresh token. Stale
+claims revoke the session; recovery requires login. Required claims use an explicit
+bounded lease and operation deadline derived from existing HTTP settings.
+
+POST `/auth/logout` checks exact Origin/session-bound CSRF, commits local
+revocation, attempts standard Keycloak RP-Initiated Logout POST and clears the
+cookie. It reports provider failure without restoring local access. Logout works
+with expired JWTs or lost roles and during provider outage; it still needs the
+agent DB. An in-flight operation cannot be undone and a concurrent refresh cannot
+restore a revoked local session. Provider cookies/tokens are never forwarded to
+the browser or put in URLs.
+
+Verification: **331 tests passed**, no skips, including 26 lifecycle checks and
+nine real Chromium/Keycloak scenarios. Two FastAPI instances share one renewal;
+real natural expiry rotates credentials with stable cookie/CSRF, then logout
+causes Keycloak to reject the saved refresh token. Crash/timeout/cancel/logout
+races, claim/credential commit uncertainty, role changes and safe migration
+rollback are covered. Ruff/format/pip checks passed; one existing Starlette/HTTPX
+warning remains. No new dependency, real secrets, persistent development migration
+or identity repository change. Broader retained-storage/provider-state handoff is 3.6.
+
+The earlier CI visibility patch was discarded exactly as requested. User confirms
+3.4 succeeded and was pulled; that disabled-login check remains unchanged.
+No commit/push/remote CI result is claimed. Publish this branch through a PR and
+required `tests`. Parent plans remain outside service Git/PRs. Apply the new
+migration before running this revision against an older persistent database.
+Stop before 3.6; no frontend, business agent or deployment work was added.

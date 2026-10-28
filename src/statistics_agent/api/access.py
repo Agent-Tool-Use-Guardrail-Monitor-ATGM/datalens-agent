@@ -9,11 +9,12 @@ from fastapi import HTTPException, Request
 from sqlalchemy.exc import SQLAlchemyError
 
 from statistics_agent.api.auth import approved_origin, browser_credential
-from statistics_agent.contracts.auth import AuthFailureCode, AuthorizedPrincipal
+from statistics_agent.contracts.auth import AuthFailureCode, AuthorizedPrincipal, SessionOwner
 from statistics_agent.core.oidc import AuthenticationError
+from statistics_agent.core.session_lifecycle import SessionLifecycle
 
 
-def csrf_token(cookie, principal: AuthorizedPrincipal) -> str:
+def csrf_token(cookie, principal: SessionOwner) -> str:
     """HMAC uses the independent 256-bit opaque cookie as a per-session secret.
 
     The DB never stores this cookie or CSRF value. Domain-separated context binds
@@ -51,9 +52,20 @@ def require_role(role: Literal["user", "admin"]):
             raise HTTPException(503) from None
         if session is None:
             raise AuthenticationError()
-        identity = await request.app.state.oidc.validate_access(
-            session.credentials.access_token.get_secret_value()
+        owner = SessionOwner(
+            issuer=session.issuer, subject=session.subject, auth_session_ref=session.session_id
         )
+        if unsafe:
+            proofs = request.headers.getlist("x-csrf-token")
+            if len(proofs) != 1 or not hmac.compare_digest(
+                proofs[0].encode(), csrf_token(cookie, owner).encode()
+            ):
+                raise AuthenticationError(AuthFailureCode.ACCESS_DENIED)
+        identity = await SessionLifecycle(
+            request.app.state.auth_store,
+            request.app.state.oidc,
+            request.app.state.auth_settings,
+        ).authorize(session, required_role=role)
         if identity.issuer != session.issuer or identity.subject != session.subject:
             raise AuthenticationError()
         if role not in identity.roles:
@@ -62,12 +74,6 @@ def require_role(role: Literal["user", "admin"]):
             **identity.model_dump(),
             auth_session_ref=session.session_id,
         )
-        if unsafe:
-            proofs = request.headers.getlist("x-csrf-token")
-            if len(proofs) != 1 or not hmac.compare_digest(
-                proofs[0].encode(), csrf_token(cookie, principal).encode()
-            ):
-                raise AuthenticationError(AuthFailureCode.ACCESS_DENIED)
         try:
             # Reread deadlines/revocation in the conditional update, closing the
             # DB read/validation race. Only a successful authorization extends idle time.

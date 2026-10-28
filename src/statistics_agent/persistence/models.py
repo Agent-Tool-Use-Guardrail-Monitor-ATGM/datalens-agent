@@ -44,6 +44,10 @@ class BrowserSession(Base):
             name="ck_session_deadlines",
         ),
         CheckConstraint("refresh_version >= 0", name="ck_session_version"),
+        CheckConstraint(
+            "(refresh_claim_id IS NULL) = (refresh_started_at IS NULL)",
+            name="ck_session_refresh_claim",
+        ),
         Index("ix_session_idle_expiry", "idle_expires_at"),
         Index("ix_session_absolute_expiry", "absolute_expires_at"),
     )
@@ -60,3 +64,5 @@ class BrowserSession(Base):
     absolute_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     refresh_version: Mapped[int] = mapped_column(default=0)
+    refresh_claim_id: Mapped[UUID | None] = mapped_column(Uuid)
+    refresh_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

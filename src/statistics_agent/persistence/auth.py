@@ -85,6 +85,21 @@ class NewSession:
     cookie: SecretStr = field(repr=False)
 
 
+@dataclass(frozen=True)
+class RefreshClaim:
+    session: StoredSession = field(repr=False)
+    claim_id: UUID | None
+    waiting: bool
+
+
+@dataclass(frozen=True)
+class LogoutSession:
+    session_id: UUID
+    issuer: str
+    subject: str
+    credentials: Credentials | None = field(repr=False)
+
+
 class AuthStore:
     """Each operation owns its commit. Returned records are not authorization decisions.
 
@@ -307,11 +322,92 @@ class AuthStore:
                     BrowserSession.id == session_id,
                     *self._active(current),
                     BrowserSession.refresh_version == expected_version,
+                    BrowserSession.refresh_claim_id.is_(None),
                 )
                 .values(**values, refresh_version=BrowserSession.refresh_version + 1)
             )
             await session.commit()
             return result.rowcount == 1
+
+    async def claim_refresh(self, session_id: UUID, expected_version: int, lease_seconds: float):
+        """Commit a durable claim before HTTP; row locks never span remote calls."""
+        from sqlalchemy import func
+
+        async with self._database.session() as session:
+            database_now = await session.scalar(select(func.clock_timestamp()))
+            current = instant(None)
+            row = (
+                await session.execute(
+                    select(BrowserSession)
+                    .where(
+                        BrowserSession.id == session_id,
+                        *self._active(current),
+                    )
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                return None
+            if row.refresh_claim_id is not None:
+                if row.refresh_started_at + timedelta(seconds=lease_seconds) <= database_now:
+                    row.revoked_at = current
+                    await session.commit()
+                    return None
+                return RefreshClaim(self._snapshot(row), None, True)
+            if row.refresh_version != expected_version:
+                return RefreshClaim(self._snapshot(row), None, False)
+            claim_id = uuid4()
+            row.refresh_claim_id = claim_id
+            row.refresh_started_at = database_now
+            snapshot = self._snapshot(row)
+            await session.commit()
+            return RefreshClaim(snapshot, claim_id, False)
+
+    async def finish_refresh(
+        self, session_id: UUID, claim_id: UUID, version: int, credentials: Credentials
+    ):
+        current = instant(None)
+        async with self._database.session() as session:
+            row = (
+                await session.execute(
+                    select(BrowserSession)
+                    .where(
+                        BrowserSession.id == session_id,
+                        *self._active(current),
+                        BrowserSession.refresh_claim_id == claim_id,
+                        BrowserSession.refresh_version == version,
+                    )
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                return False
+            for name, value in self._credentials(row, credentials).items():
+                setattr(row, name, value)
+            row.refresh_version += 1
+            row.refresh_claim_id = None
+            row.refresh_started_at = None
+            await session.commit()
+            return True
+
+    async def read_logout_session(self, cookie: SecretStr):
+        """Local logout must work despite expired JWTs or unreadable token ciphertext."""
+        async with self._database.session() as session:
+            row = (
+                await session.execute(
+                    select(BrowserSession).where(
+                        BrowserSession.cookie_hash == credential_hash(cookie),
+                        BrowserSession.issuer == self._settings.issuer,
+                    )
+                )
+            ).scalar_one_or_none()
+        if row is None:
+            return None
+        try:
+            credentials = self._snapshot(row).credentials
+        except ValueError:
+            credentials = None
+        return LogoutSession(row.id, row.issuer, row.subject, credentials)
 
     async def revoke_session(self, session_id: UUID, *, now: datetime | None = None) -> bool:
         current = instant(now)

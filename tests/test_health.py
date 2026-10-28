@@ -152,6 +152,7 @@ def test_development_openapi_lists_health_but_no_business_endpoints(settings):
             "/auth/login",
             "/auth/callback",
             "/auth/me",
+            "/auth/logout",
         }
 
 

@@ -10,6 +10,7 @@ services:
       - "127.0.0.1:18081:8080"
     volumes:
       - ./tests/fixtures/login-realm.json:/opt/keycloak/data/import/browser-test-realm.json:ro
+      - ./tests/fixtures/refresh-realm.json:/opt/keycloak/data/import/refresh-test-realm.json:ro
     tmpfs:
       - /opt/keycloak/data:uid=1000,gid=0,mode=0770
     healthcheck:

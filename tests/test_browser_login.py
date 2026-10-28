@@ -3,6 +3,7 @@
 import io
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
@@ -15,6 +16,8 @@ from sqlalchemy import delete
 
 from statistics_agent.app import create_app
 from statistics_agent.core.auth import AuthSettings
+from statistics_agent.core.token_encryption import TokenEncryption
+from statistics_agent.persistence.auth import AuthStore
 from statistics_agent.persistence.database import Database
 from statistics_agent.persistence.migrate import execute
 from statistics_agent.persistence.models import BrowserSession, LoginAttempt
@@ -28,7 +31,7 @@ ISSUER = "http://localhost:18081/realms/browser-test"
 
 
 @pytest.fixture
-def browser_app(settings):
+def browser_app(settings, request):
     if os.environ.get("AUTH_BROWSER_TESTS") != "1":
         if os.environ.get("CI"):
             pytest.fail("CI must enable AUTH_BROWSER_TESTS; browser login cannot be skipped")
@@ -36,16 +39,19 @@ def browser_app(settings):
     run(execute(settings, "upgrade"))
     auth = AuthSettings(
         app_env="test",
-        issuer=ISSUER,
+        issuer=getattr(request, "param", ISSUER),
         public_origin=ORIGIN,
         client_secret_file="unused-client",
         encryption_keys_file="unused-ring",
+        read_timeout=15 if getattr(request, "param", ISSUER) != ISSUER else 5,
+        request_timeout=30 if getattr(request, "param", ISSUER) != ISSUER else 10,
     )
     secrets = keyring().model_copy(
         update={"client_secret": SecretStr("synthetic-browser-client-secret")}
     )
     output = io.StringIO()
     app = create_app(settings, auth_settings=auth, auth_secrets=secrets, log_stream=output)
+    app.state.test_keys = secrets
     server = uvicorn.Server(
         uvicorn.Config(
             app,
@@ -74,7 +80,7 @@ def browser_app(settings):
             try:
                 async with database.session() as session:
                     for model in (BrowserSession, LoginAttempt):
-                        await session.execute(delete(model).where(model.issuer == ISSUER))
+                        await session.execute(delete(model).where(model.issuer == auth.issuer))
                     await session.commit()
             finally:
                 await database.close()
@@ -182,3 +188,102 @@ def test_browser_login_success_or_safe_denial(browser_app, scenario):
             finally:
                 context.close()
                 browser.close()
+
+
+@pytest.mark.parametrize(
+    "browser_app", ["http://localhost:18081/realms/refresh-test"], indirect=True
+)
+def test_real_refresh_keeps_cookie_and_logout_invalidates_provider_session(browser_app, settings):
+    app, _output = browser_app
+    with ThreadPoolExecutor(max_workers=1) as database_thread, sync_playwright() as playwright:
+        browser = playwright.chromium.launch(args=["--no-proxy-server"])
+        context = browser.new_context()
+        try:
+            page = context.new_page()
+            page.goto(ORIGIN + "/auth/login")
+            page.locator("#username").fill("analyst")
+            page.locator("#password").fill("Synthetic-Test-Password!29")
+            page.locator("#kc-login").click()
+            page.wait_for_url(ORIGIN + "/")
+            cookie_name = app.state.auth_settings.session_cookie_name
+            original_cookie = next(
+                item["value"] for item in context.cookies(ORIGIN) if item["name"] == cookie_name
+            )
+            first = context.request.get(ORIGIN + "/auth/me")
+            assert first.status == 200
+            proof = first.json()["csrf_token"]
+
+            async def stored_session():
+                database = Database(settings)
+                try:
+                    store = AuthStore(
+                        database, app.state.auth_settings, TokenEncryption(app.state.test_keys)
+                    )
+                    return await store.read_session(SecretStr(original_cookie))
+                finally:
+                    await database.close()
+
+            initial = database_thread.submit(run, stored_session()).result(timeout=10)
+            assert initial.refresh_version == 0
+            deadline = time.monotonic() + 45
+            while True:
+                response = context.request.get(ORIGIN + "/auth/me")
+                assert response.status == 200
+                assert response.json()["csrf_token"] == proof
+                current = database_thread.submit(run, stored_session()).result(timeout=10)
+                if current.refresh_version == 1:
+                    break
+                assert time.monotonic() < deadline, (
+                    "Natural token expiry did not trigger one refresh"
+                )
+                time.sleep(0.25)
+            assert current.credentials.refresh_token != initial.credentials.refresh_token
+            assert (
+                next(
+                    item["value"] for item in context.cookies(ORIGIN) if item["name"] == cookie_name
+                )
+                == original_cookie
+            )
+            provider_statuses = []
+
+            async def observe_provider(response):
+                provider_statuses.append((response.request.url.path, response.status_code))
+
+            app.state.oidc._http.event_hooks["response"].append(observe_provider)
+            logged_out = context.request.post(
+                ORIGIN + "/auth/logout",
+                timeout=45000,
+                headers={
+                    "Origin": ORIGIN,
+                    "X-CSRF-Token": proof,
+                },
+            )
+            assert logged_out.status == 200
+            assert logged_out.json() == {
+                "local_logged_out": True,
+                "provider_logout_succeeded": True,
+            }, (
+                f"Provider statuses: {provider_statuses}; "
+                f"ID hint available: {current.credentials.id_token is not None}"
+            )
+            assert not any(item["name"] == cookie_name for item in context.cookies(ORIGIN))
+            with httpx.Client(trust_env=False, timeout=15) as client:
+                assert (
+                    client.get(
+                        ORIGIN + "/auth/me", headers={"Cookie": cookie_name + "=" + original_cookie}
+                    ).status_code
+                    == 401
+                )
+                rejected = client.post(
+                    app.state.auth_settings.issuer + "/protocol/openid-connect/token",
+                    data={
+                        "grant_type": "refresh_token",
+                        "client_id": "agent-api",
+                        "client_secret": "synthetic-browser-client-secret",
+                        "refresh_token": current.credentials.refresh_token.get_secret_value(),
+                    },
+                )
+                assert rejected.status_code in {400, 401}
+        finally:
+            context.close()
+            browser.close()

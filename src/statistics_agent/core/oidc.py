@@ -28,6 +28,14 @@ class AuthenticationError(Exception):
         super().__init__(code.value)
 
 
+class ExpiredAccess(AuthenticationError):
+    """All signature, identity and permission checks passed; only expiry failed."""
+
+    def __init__(self, identity):
+        super().__init__()
+        self.identity = identity
+
+
 @dataclass(frozen=True)
 class VerifiedLogin:
     principal: AuthenticatedPrincipal
@@ -51,6 +59,7 @@ class OidcProvider:
                 write=settings.read_timeout,
             ),
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+            event_hooks={"request": [self._no_cookies]},
         )
         self._endpoints = None
         self._keys = {}
@@ -58,6 +67,11 @@ class OidcProvider:
         self._last_fetch = float("-inf")
         self._last_failed = False
         self._lock = asyncio.Lock()
+
+    @staticmethod
+    async def _no_cookies(request):
+        # A shared provider client must never forward one user's browser cookies.
+        request.headers.pop("cookie", None)
 
     async def close(self):
         await self._http.aclose()
@@ -167,15 +181,33 @@ class OidcProvider:
             raise AuthenticationError() from None
         key = await self._ensure_keys(kid)
         try:
-            claims = jwt.decode(
-                token,
-                key,
-                algorithms=list(self.settings.allowed_algorithms),
-                issuer=self.settings.issuer,
-                audience=self.settings.client_id,
-                leeway=0,
-                options={"require": ["iss", "sub", "aud", "iat", "exp"]},
-            )
+            options = {"require": ["iss", "sub", "aud", "iat", "exp"]}
+            expired = False
+            try:
+                claims = jwt.decode(
+                    token,
+                    key,
+                    algorithms=list(self.settings.allowed_algorithms),
+                    issuer=self.settings.issuer,
+                    audience=self.settings.client_id,
+                    leeway=0,
+                    options=options,
+                )
+            except jwt.ExpiredSignatureError:
+                if not access:
+                    raise
+                # Verify again without exp only: wrong signature/audience/nbf/etc
+                # must never be classified as a refreshable expired credential.
+                claims = jwt.decode(
+                    token,
+                    key,
+                    algorithms=list(self.settings.allowed_algorithms),
+                    issuer=self.settings.issuer,
+                    audience=self.settings.client_id,
+                    leeway=0,
+                    options={**options, "verify_exp": False},
+                )
+                expired = True
             if (
                 type(claims["iat"]) is not int
                 or type(claims["exp"]) is not int
@@ -203,14 +235,14 @@ class OidcProvider:
                 raise ValueError
             if access and claims.get("typ") != "Bearer":
                 raise ValueError
-            return claims
+            return claims, expired
         except (ValueError, TypeError, KeyError, jwt.PyJWTError):
             pass
         raise AuthenticationError()
 
     async def validate_access(self, token: str) -> VerifiedIdentity:
         """Reusable local validation; this does not load or authorize a browser session."""
-        claims = await self._decode(token, access=True)
+        claims, expired = await self._decode(token, access=True)
         verified = claims.get("email_verified")
         resources = claims.get("resource_access", {})
         if type(verified) is not bool or not isinstance(resources, dict):
@@ -224,12 +256,15 @@ class OidcProvider:
         permitted = {role for role in roles if role in {"user", "admin"}}
         if "admin" in permitted:
             permitted.add("user")
-        return VerifiedIdentity(
+        identity = VerifiedIdentity(
             issuer=claims["iss"],
             subject=claims["sub"],
             roles=frozenset(permitted),
             email_verified=True,
         )
+        if expired:
+            raise ExpiredAccess(identity)
+        return identity
 
     async def exchange(self, code: str, attempt) -> VerifiedLogin:
         endpoints = await self.endpoints()
@@ -254,7 +289,7 @@ class OidcProvider:
                     raise ValueError
         except (ValueError, AttributeError):
             raise AuthenticationError() from None
-        identity = await self._decode(result["id_token"], access=False)
+        identity, _ = await self._decode(result["id_token"], access=False)
         nonce = identity.get("nonce")
         if not isinstance(nonce, str) or not hmac.compare_digest(
             nonce.encode(), attempt.nonce.get_secret_value().encode()
@@ -283,3 +318,89 @@ class OidcProvider:
                 SecretStr(result["id_token"]),
             ),
         )
+
+    async def refresh(self, credentials: Credentials, issuer: str, subject: str) -> Credentials:
+        endpoints = await self.endpoints()
+        result = await self._json(
+            "POST",
+            endpoints.token_endpoint,
+            exchange=True,
+            data={
+                "grant_type": "refresh_token",
+                "client_id": self.settings.client_id,
+                "client_secret": self._secret.get_secret_value(),
+                "refresh_token": credentials.refresh_token.get_secret_value(),
+            },
+        )
+        if (
+            not isinstance(result.get("token_type"), str)
+            or result["token_type"].lower() != "bearer"
+            or any(
+                not isinstance(result.get(name), str) or not 1 <= len(result[name]) <= 32768
+                for name in ("access_token", "refresh_token")
+            )
+        ):
+            raise AuthenticationError()
+        identity = await self.validate_access(result["access_token"])
+        if identity.issuer != issuer or identity.subject != subject:
+            raise AuthenticationError()
+        id_token = credentials.id_token
+        if "id_token" in result:
+            if not isinstance(result["id_token"], str):
+                raise AuthenticationError()
+            renewed, _ = await self._decode(result["id_token"], access=False)
+            if renewed["sub"] != subject:
+                raise AuthenticationError()
+            if "nonce" in renewed or "auth_time" in renewed:
+                # Original ID token was verified at login and is authenticated in
+                # encrypted storage; this read supplies comparison context only.
+                original = (
+                    jwt.decode(
+                        credentials.id_token.get_secret_value(), options={"verify_signature": False}
+                    )
+                    if credentials.id_token
+                    else {}
+                )
+                for claim in ("nonce", "auth_time"):
+                    if claim in renewed and renewed[claim] != original.get(claim):
+                        raise AuthenticationError()
+            if "at_hash" in renewed:
+                expected = (
+                    base64.urlsafe_b64encode(
+                        hashlib.sha256(result["access_token"].encode()).digest()[:16]
+                    )
+                    .decode()
+                    .rstrip("=")
+                )
+                if renewed["at_hash"] != expected:
+                    raise AuthenticationError()
+            id_token = SecretStr(result["id_token"])
+        return Credentials(
+            SecretStr(result["access_token"]), SecretStr(result["refresh_token"]), id_token
+        )
+
+    async def logout(self, credentials: Credentials | None) -> bool:
+        """RP-Initiated Logout POST; no token in URLs or browser-cookie forwarding."""
+        if credentials is None or credentials.id_token is None:
+            return False
+        try:
+            async with asyncio.timeout(self.settings.request_timeout):
+                endpoints = await self.endpoints()
+                async with self._http.stream(
+                    "POST",
+                    endpoints.end_session_endpoint,
+                    data={
+                        "id_token_hint": credentials.id_token.get_secret_value(),
+                        "client_id": self.settings.client_id,
+                    },
+                ) as response:
+                    if response.status_code not in {200, 204}:
+                        return False
+                    size = 0
+                    async for chunk in response.aiter_bytes():
+                        size += len(chunk)
+                        if size > 131072:
+                            return False
+                    return True
+        except (AuthenticationError, httpx.HTTPError, TimeoutError):
+            return False

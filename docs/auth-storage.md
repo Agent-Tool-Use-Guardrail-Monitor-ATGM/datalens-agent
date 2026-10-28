@@ -2,8 +2,8 @@
 
 Step 3.2 introduced internal PostgreSQL repositories for browser sessions and
 pending logins. Step 3.3 now connects them to login/callback and startup; see
-[browser login](browser-login.md). Step 3.4 adds [ongoing request authorization](request-authorization.md); automatic
-refresh and logout remain later steps. Storing a credential or constructing a principal
+[browser login](browser-login.md). Step 3.4 adds [ongoing request authorization](request-authorization.md); [coordinated refresh and logout](session-refresh-logout.md) are now implemented
+by step 3.5 with migration `0003_refresh_claim`. Storing a credential or constructing a principal
 does not verify it. The verification evidence below records the original 3.2 step.
 
 ## Tables and migration
@@ -75,9 +75,9 @@ extends the absolute deadline or revives an expired/revoked session.
 
 `replace_credentials` provides atomic version-checked persistence: concurrent
 updates at the same version have one winner. It preserves the browser credential
-and cannot update a revoked/expired session. **This is not refresh coordination**:
-step 3.5 must prevent multiple replicas from exchanging the same refresh token
-before contacting Keycloak and handle uncertain exchange outcomes.
+and cannot update a revoked/expired session. **This helper alone is not refresh coordination**: step 3.5 now provides a
+durable claim and a separate matching-claim update for that purpose. Ordinary
+versioned replacement cannot overwrite credentials with a pending claim.
 
 All repository operations own short transactions and return after commit. They
 perform no remote calls. Optional `now` arguments accept only trusted server time
