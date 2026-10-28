@@ -119,8 +119,8 @@ honored. That original check remains unchanged. Its prior CI rerun/merge is
 accepted from the user's confirmation. No other user edits were reverted.
 
 Branch: `feature/session-refresh-logout`. No commit/push or remote CI result is
-claimed. Parent planning files remain outside the service repository/PR. Stop
-before step 3.6, which owns the broader retained-storage and frontend handoff.
+claimed. Parent planning files remain outside the service repository/PR. Subsequent step 3.6 now provides [retained-state/provider verification and
+frontend handoff](access-handoff.md); the evidence here records original 3.5 scope.
 
 Verified on 28 October 2026: **331 tests passed**, no skips, including 26 lifecycle
 cases and nine real browser scenarios. Ruff, touched-file formatting and pip

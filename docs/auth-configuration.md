@@ -118,8 +118,9 @@ The existing CI test job will collect these tests after publication; no new chec
 name was added. Existing uncommitted naming edits were preserved separately and
 were not committed. Parent plans remain outside this repository/its PR.
 
-Subsequent progress: 3.1–3.4 are delivered per user confirmation; 3.5 refresh/
-logout is complete locally and pending its PR/required CI. See
+Subsequent progress: 3.1–3.5 are delivered per user confirmation; 3.6 integration
+verification is complete locally and pending its PR/required CI. See
+[complete access handoff](access-handoff.md). See
 [refresh/logout](session-refresh-logout.md). See
 [request authorization](request-authorization.md).
 

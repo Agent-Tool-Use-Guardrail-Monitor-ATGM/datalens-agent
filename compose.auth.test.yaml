@@ -1,16 +1,51 @@
 # Synthetic browser-login fixture only; no development identity storage or secrets.
 name: datalens-agent-auth-tests
 services:
+  identity-test-postgres:
+    image: postgres:17.11-bookworm@sha256:858bb5e98eed02eb8cafbcdc007f9a65d1b613972028944a8ec2133ccaf80d27
+    environment:
+      POSTGRES_DB: identity_test_db
+      POSTGRES_USER: identity_test
+      POSTGRES_PASSWORD: synthetic-identity-db-password
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U identity_test -d identity_test_db"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    mem_limit: 256m
+
+  identity-test-mailpit:
+    image: axllent/mailpit:v1.32.0@sha256:0790692be935ea4420d085694f7985b1f692ca6a8771ab0e0bd8ba75ac180498
+    environment:
+      MP_MAX_MESSAGES: "50"
+    ports:
+      - "127.0.0.1:18025:8025"
+    mem_limit: 128m
+
   identity-test-keycloak:
     image: quay.io/keycloak/keycloak:26.8.1@sha256:a78d6b79572168cb25886b80a8b5b8d4ed4390743e3eecb810538683e209dd6b
     command: ["start-dev", "--import-realm", "--health-enabled=true"]
     environment:
       KC_HOSTNAME: http://localhost:18081
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://identity-test-postgres:5432/identity_test_db
+      KC_DB_USERNAME: identity_test
+      KC_DB_PASSWORD: synthetic-identity-db-password
+      KC_BOOTSTRAP_ADMIN_USERNAME: integration-admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: Synthetic-Admin-Password!41
+    depends_on:
+      identity-test-postgres:
+        condition: service_healthy
+      identity-test-mailpit:
+        condition: service_started
     ports:
       - "127.0.0.1:18081:8080"
     volumes:
       - ./tests/fixtures/login-realm.json:/opt/keycloak/data/import/browser-test-realm.json:ro
       - ./tests/fixtures/refresh-realm.json:/opt/keycloak/data/import/refresh-test-realm.json:ro
+      - ./tests/fixtures/integration-realm.json:/opt/keycloak/data/import/integration-test-realm.json:ro
     tmpfs:
       - /opt/keycloak/data:uid=1000,gid=0,mode=0770
     healthcheck:
@@ -22,5 +57,5 @@ services:
       interval: 3s
       timeout: 3s
       start_period: 30s
-      retries: 40
+      retries: 60
     mem_limit: 768m

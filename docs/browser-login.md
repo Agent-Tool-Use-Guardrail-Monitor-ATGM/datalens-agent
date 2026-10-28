@@ -108,22 +108,22 @@ silently skipping. Cleanup runs even on failure. For local full verification:
 ```powershell
 .\.venv\Scripts\python.exe -m playwright install chromium
 docker compose -f compose.test.yaml up -d --wait
-docker compose -f compose.auth.test.yaml up -d --wait --wait-timeout 180
+docker compose -p datalens-agent-auth-tests -f compose.auth.test.yaml up -d --wait --wait-timeout 240
 $env:TEST_DATABASE_URL = 'postgresql+psycopg://agent_test:test-only-password@127.0.0.1:54330/agent_test_db'
 $env:AUTH_BROWSER_TESTS = '1'
 .\.venv\Scripts\python.exe -m pytest -q
-docker compose -f compose.auth.test.yaml down
+docker compose -p datalens-agent-auth-tests -f compose.auth.test.yaml down
 docker compose -f compose.test.yaml down
 ```
 
-Both fixtures are disposable. Keycloak uses its development H2 database on tmpfs,
-synthetic users/secrets and an explicit realm import. It does not connect to the
-identity repository or persistent identity PostgreSQL. Its client has explicit
-role scopes, code flow and S256 PKCE; password/implicit/service-account grants are
-disabled. This fixture proves browser/OIDC interoperability, not production
-deployment, invitation setup or identity-database recovery. Those retain their
-existing owning tests/plans. No saved browser traces, screenshots, mail or secret
-artifacts are created.
+Both fixtures are disposable. Step 3.6 now gives Keycloak its own isolated
+PostgreSQL instance on tmpfs plus Mailpit for local activation capture; it does not
+connect to developer identity storage. Explicit realm imports contain synthetic
+accounts only. The application client uses explicit role scopes, code flow and
+S256 PKCE; password/implicit/service-account grants are disabled. A disposable
+master administrator exists only for integration tests. No saved browser traces,
+screenshots, mail, OAuth tokens or invitation artifacts are created. See
+[the complete integration/handoff guide](access-handoff.md).
 
 Implementation follows [OpenID Connect ID-token validation](https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation),
 [PyJWT's fixed-algorithm verification guidance](https://pyjwt.readthedocs.io/en/stable/api.html),

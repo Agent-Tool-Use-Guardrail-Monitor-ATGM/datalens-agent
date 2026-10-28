@@ -52,11 +52,11 @@ jobs:
       - name: Prepare browser and disposable Keycloak
         run: |
           python -m playwright install --with-deps chromium
-          docker compose -f compose.auth.test.yaml up -d --wait --wait-timeout 180
+          docker compose -p datalens-agent-auth-tests -f compose.auth.test.yaml up -d --wait --wait-timeout 240
 
       - name: Run tests
         run: python -m pytest -q
 
       - name: Remove disposable identity fixture
         if: always()
-        run: docker compose -f compose.auth.test.yaml down
+        run: docker compose -p datalens-agent-auth-tests -f compose.auth.test.yaml down
