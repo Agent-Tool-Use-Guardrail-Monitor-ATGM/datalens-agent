@@ -3,6 +3,7 @@
 Current startup requires auth settings and protected client-secret/encryption-key
 files, in addition to DATABASE_URL. See [browser login setup](docs/browser-login.md)
 before running the API. Missing configuration fails startup; there is no bypass.
+Current request/session API: [local authorization and ownership](docs/request-authorization.md).
 
 ## Environment and setup
 
@@ -638,8 +639,8 @@ PostgreSQL and real accounts were untouched. Earlier failed fixture runs involve
 a realm-import filename, redirect interception and an error-theme selector; these
 were corrected. A stale health-only OpenAPI assertion was updated for auth routes.
 
-No frontend, `/auth/me`, CSRF enforcement on protected operations, ownership,
-refresh or logout endpoint is implemented yet. Successful login redirects to `/`,
+At completion of 3.3 there was no frontend, `/auth/me`, protected-operation CSRF,
+ownership, refresh or logout. Step 3.4 below now adds request authorization. Successful login redirects to `/`,
 which currently returns 404; the session cookie is created. Public protected-route
 behavior and automatic refresh remain steps 3.4/3.5, not claimed by login success.
 No real secret files were generated and no persistent database was migrated.
@@ -647,3 +648,37 @@ No real secret files were generated and no persistent database was migrated.
 No commit/push/remote CI result is claimed. Publish this branch through its PR
 with required `tests`. Parent plans/README remain outside service Git/PRs. Stop
 before 3.4; it requires a separate request.
+
+
+## Protected requests and ownership — step 3.4
+
+Implemented locally on `feature/token-authorization`. Step 3.3 delivery/pull is
+accepted from the user's confirmation. See [request behavior and route integration](docs/request-authorization.md).
+GET `/auth/me` returns safe identity/roles, verified-email status and a session-
+bound CSRF token. It never returns the browser credential or OAuth tokens.
+Reusable user/admin dependencies validate the local session and signed JWT on
+every operation, match issuer/subject, enforce roles and conditionally update
+idle activity only after successful authorization. Admin includes user permission.
+
+Cookie-authenticated writes require one exact trusted Origin and one session-bound
+X-CSRF-Token header. Responses from protected dependencies use no-store/no-referrer.
+The SQL ownership helper filters both issuer and subject inside the query; admin
+cannot bypass ownership. Resource tables/routes used to prove this remain test-only.
+
+All **305 tests passed**, no skips, including 31 new PostgreSQL-backed access
+checks and real Chromium `/auth/me` after Keycloak login. The expiry-boundary
+check also passed a focused rerun after a slow-CI timing assumption was removed.
+Ruff, touched formatting and pip consistency checks passed. One pre-existing
+Starlette/HTTPX warning remains. Existing required `tests` CI collects the new
+cases; no job, migration, dependency or configuration addition was necessary.
+
+Ordinary valid-token requests use cached trusted keys without introspection or
+identity lookup. Invalid/expired local state or tokens return 401, permission
+failures 403 and required key/DB outages safe 503. Role changes may lag until
+JWT expiry; local session revocation denies the old cookie. No automatic refresh,
+logout endpoint, dataset/run API or frontend is implemented yet. Persistent data,
+real accounts and identity repository were untouched.
+
+No commit/push/remote CI result is claimed. Publish `feature/token-authorization`
+through a PR and required `tests`; parent plans stay outside service Git/PRs.
+Stop before 3.5; refresh/logout requires a separate request.

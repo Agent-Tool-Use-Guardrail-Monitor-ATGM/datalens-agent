@@ -118,8 +118,9 @@ The existing CI test job will collect these tests after publication; no new chec
 name was added. Existing uncommitted naming edits were preserved separately and
 were not committed. Parent plans remain outside this repository/its PR.
 
-Subsequent progress: 3.1/3.2 are delivered per user confirmation; 3.3 browser
-login is complete locally and pending its PR/required CI.
+Subsequent progress: 3.1–3.3 are delivered per user confirmation; 3.4 request
+authorization is complete locally and pending its PR/required CI. See
+[request authorization](request-authorization.md).
 
 Sources: [PyJWT validation](https://pyjwt.readthedocs.io/en/stable/api.html),
 [Fernet](https://cryptography.io/en/stable/fernet/),
@@ -132,9 +133,9 @@ The plan now uses local JWT authorization with trusted cached public keys and
 five-minute access tokens. No per-request introspection. Existing 3.1 types,
 RS256 policy, secret references and provider endpoint metadata remain usable; the
 introspection endpoint is retained for compatibility/diagnostics, not normal API
-requests. Step 3.3 now implements the cache and initial login-token validation. Steps
-3.4–3.6 will wire protected requests, test bounded role-change delay and allow
-valid-token work during identity outage when its key is still trusted. Cache trust is bounded to one hour; unknown/expired trust and
+requests. Step 3.3 now implements the cache and initial login-token validation. Step 3.4 now wires protected requests and demonstrates bounded token-expiry
+behavior, role replacement and trusted-key outage continuity. Real provider
+renewal and broader integration remain 3.5/3.6. Cache trust is bounded to one hour; unknown/expired trust and
 required renewal still need identity connectivity. Local logout remains immediate.
 Browser cookies, encrypted server tokens, refresh coordination and CSRF remain.
 No runtime code, dependency or test changed in this documentation revision.

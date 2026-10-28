@@ -146,7 +146,13 @@ def test_development_openapi_lists_health_but_no_business_endpoints(settings):
     app = create_app(settings, log_stream=io.StringIO())
     with TestClient(app) as client:
         paths = client.get("/openapi.json").json()["paths"]
-        assert set(paths) == {"/health/live", "/health/ready", "/auth/login", "/auth/callback"}
+        assert set(paths) == {
+            "/health/live",
+            "/health/ready",
+            "/auth/login",
+            "/auth/callback",
+            "/auth/me",
+        }
 
 
 @asynccontextmanager
