@@ -22,7 +22,11 @@ class VerifiedIdentity(AuthenticatedPrincipal):
         return value
 
 
-class AuthorizedPrincipal(VerifiedIdentity, AuthSessionReference):
+class SessionOwner(AuthenticatedPrincipal, AuthSessionReference):
+    """Local cookie binding only; does not grant agent permissions."""
+
+
+class AuthorizedPrincipal(VerifiedIdentity, SessionOwner):
     """Only current session and verified token checks may supply this principal."""
 
 
@@ -34,6 +38,11 @@ class SessionView(Contract):
     roles: tuple[Literal["user", "admin"], ...]
     email_verified: bool
     csrf_token: str = Field(repr=False)
+
+
+class LogoutView(Contract):
+    local_logged_out: Literal[True] = True
+    provider_logout_succeeded: bool
 
 
 class AuthFailureCode(StrEnum):

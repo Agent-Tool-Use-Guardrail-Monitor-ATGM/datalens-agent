@@ -118,8 +118,9 @@ The existing CI test job will collect these tests after publication; no new chec
 name was added. Existing uncommitted naming edits were preserved separately and
 were not committed. Parent plans remain outside this repository/its PR.
 
-Subsequent progress: 3.1–3.3 are delivered per user confirmation; 3.4 request
-authorization is complete locally and pending its PR/required CI. See
+Subsequent progress: 3.1–3.4 are delivered per user confirmation; 3.5 refresh/
+logout is complete locally and pending its PR/required CI. See
+[refresh/logout](session-refresh-logout.md). See
 [request authorization](request-authorization.md).
 
 Sources: [PyJWT validation](https://pyjwt.readthedocs.io/en/stable/api.html),
@@ -134,8 +135,7 @@ five-minute access tokens. No per-request introspection. Existing 3.1 types,
 RS256 policy, secret references and provider endpoint metadata remain usable; the
 introspection endpoint is retained for compatibility/diagnostics, not normal API
 requests. Step 3.3 now implements the cache and initial login-token validation. Step 3.4 now wires protected requests and demonstrates bounded token-expiry
-behavior, role replacement and trusted-key outage continuity. Real provider
-renewal and broader integration remain 3.5/3.6. Cache trust is bounded to one hour; unknown/expired trust and
+behavior, role replacement and trusted-key outage continuity. Step 3.5 now implements provider renewal and logout; broader handoff remains 3.6. Cache trust is bounded to one hour; unknown/expired trust and
 required renewal still need identity connectivity. Local logout remains immediate.
 Browser cookies, encrypted server tokens, refresh coordination and CSRF remain.
 No runtime code, dependency or test changed in this documentation revision.

@@ -26,7 +26,7 @@ from statistics_agent.persistence.schema import (
 )
 
 BASELINE = "0001_agent_baseline"
-HEAD = "0002_auth_storage"
+HEAD = "0003_refresh_claim"
 
 
 def run(coroutine):
@@ -218,7 +218,7 @@ def test_failed_upgrade_rolls_back_ddl_and_preserves_previous_revision(settings,
         """
 from alembic import op
 revision = "0002_failure"
-down_revision = "0002_auth_storage"
+down_revision = "0003_refresh_claim"
 branch_labels = depends_on = None
 def upgrade():
     op.execute("CREATE TABLE rollback_probe (id integer)")
@@ -269,7 +269,7 @@ def test_explicit_cli_upgrade_and_check_with_local_env_file(
             await database.close()
 
     before = run(current())
-    assert before.current_heads in {(), (BASELINE,), (HEAD,)}
+    assert before.current_heads in {(), (BASELINE,), ("0002_auth_storage",), (HEAD,)}
     try:
         assert main(["upgrade", "--env-file", str(env_file)]) == 0
         assert main(["check", "--env-file", str(env_file)]) == 0

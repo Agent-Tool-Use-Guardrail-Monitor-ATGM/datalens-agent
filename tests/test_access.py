@@ -120,7 +120,6 @@ def test_me_uses_signed_roles_and_offline_cache_without_introspection_or_secret_
         ("revoked", 401),
         ("idle-expired", 401),
         ("absolute-expired", 401),
-        ("expired-token", 401),
         ("tampered", 401),
         ("issuer", 401),
         ("audience", 401),
@@ -297,10 +296,9 @@ def test_role_changes_take_effect_at_fresh_token_or_expiry_without_refresh(setti
                     return datetime.fromtimestamp(replacement_claims["exp"] + 1, UTC)
 
             monkeypatch.setattr(jwt.api_jwt, "datetime", ExpiredClock)
-            assert (await client.get("/auth/me", headers=headers(created))).status_code == 401
-            assert len(source.calls) == 2 and not any(
-                call.method == "POST" for call in source.calls
-            )
+            assert (await client.get("/auth/me", headers=headers(created))).status_code == 503
+            assert len(source.calls) == 3 and source.calls[-1].method == "POST"
+            assert await store.read_session(created.cookie) is None
 
     run(exercise())
 

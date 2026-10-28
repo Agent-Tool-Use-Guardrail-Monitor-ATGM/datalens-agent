@@ -42,8 +42,9 @@ continue during provider outage. Unknown keys after a successful retrieval are
 invalid; unknown keys during outage or expired trust fail safely. No introspection
 or identity-user lookup is performed. Remote role/account/email/logout changes
 may lag until JWT expiry, at most 300 seconds with zero expiry leeway. A fresh
-stored JWT is checked immediately. Token expiry currently returns 401 even when
-a refresh credential exists; automatic renewal belongs to step 3.5.
+stored JWT is checked immediately. Step 3.5 now renews an otherwise-valid expired token using a durable cross-replica
+claim; see [refresh/logout](session-refresh-logout.md). Invalid identity/permission
+checks never initiate renewal.
 
 ## CSRF and future routes
 
@@ -106,8 +107,8 @@ development migration, real-secret provisioning or identity repository change.
 Existing required `tests` CI collects the new tests without another check name.
 
 Branch: `feature/token-authorization`. No commit/push or remote CI result is
-claimed. Parent plans are outside this Git repository and its PR. Stop before
-3.5: refresh coordination and the logout endpoint are not implemented here.
+claimed. Parent plans are outside this Git repository and its PR. This evidence records original 3.4 scope. Step 3.5 now implements coordinated
+refresh and logout; see [its guide](session-refresh-logout.md).
 
 Step 3.4 disposable PostgreSQL/Keycloak containers and networks were removed
 after verification; persistent development volumes were untouched. Docker Desktop

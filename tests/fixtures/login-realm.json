@@ -164,5 +164,7 @@
         ]
       }
     ]
-  }
+  },
+  "revokeRefreshToken": true,
+  "refreshTokenMaxReuse": 0
 }

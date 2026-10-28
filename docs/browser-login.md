@@ -3,8 +3,8 @@
 The API now implements `GET /auth/login` and `GET /auth/callback`. It uses
 Keycloak's login page and creates an opaque browser session after validating the
 code exchange. Step 3.4 now adds `/auth/me` and protected-route/ownership dependencies; see
-[request authorization](request-authorization.md). There is no frontend, protected
-business endpoint or automatic refresh yet. Successful login redirects to `/`, which currently returns
+[request authorization](request-authorization.md). There is no frontend or protected
+business endpoint yet. Step 3.5 now provides [automatic refresh and logout](session-refresh-logout.md). Successful login redirects to `/`, which currently returns
 404 until a landing page/frontend is added; the session cookie is still created.
 
 ## Operator setup
@@ -76,8 +76,8 @@ Invalid responses/tokens return fixed 401 errors. Valid tokens without verified
 email/application roles return 403. Required provider discovery/key retrieval or
 exchange outages return 503. These responses never include provider diagnostics.
 Step 3.4 implements ongoing session/token validation, `/auth/me`, CSRF and
-ownership helpers. Until 3.5 there is no refresh; expired credentials require
-a fresh login.
+ownership helpers. Step 3.5 now renews an otherwise-valid expired token and implements local-first
+logout; rejected/uncertain renewal still requires a fresh login.
 
 ## Signing-key cache
 
