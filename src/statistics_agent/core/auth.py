@@ -63,7 +63,7 @@ class ProviderEndpoints(Contract):
 
 
 class AuthSettings(BaseSettings):
-    """Separate opt-in settings; foundation routes do not load these yet."""
+    """Required factory settings; validation itself performs no infrastructure I/O."""
 
     model_config = SettingsConfigDict(
         env_file=None,

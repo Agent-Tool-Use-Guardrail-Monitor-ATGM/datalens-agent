@@ -100,6 +100,12 @@ class RequestMiddleware:
                     for key, value in message.get("headers", [])
                     if key.lower() != b"x-request-id"
                 ] + [(b"x-request-id", str(request_id).encode("ascii"))]
+                if scope.get("path", "").startswith("/auth/"):
+                    message["headers"] = [
+                        (key, value)
+                        for key, value in message["headers"]
+                        if key.lower() not in {b"cache-control", b"referrer-policy"}
+                    ] + [(b"cache-control", b"no-store"), (b"referrer-policy", b"no-referrer")]
             await send(message)
 
         try:

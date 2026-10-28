@@ -1,9 +1,10 @@
 # Authentication storage — step 3.2
 
-The agent now has internal PostgreSQL repositories for browser sessions and
-pending logins. They are not connected to HTTP routes or application startup yet.
-Login, JWT validation, authorization, automatic refresh and logout endpoints remain
-later steps. Storing a credential or constructing a principal does not verify it.
+Step 3.2 introduced internal PostgreSQL repositories for browser sessions and
+pending logins. Step 3.3 now connects them to login/callback and startup; see
+[browser login](browser-login.md). Ongoing request authorization, automatic refresh
+and logout remain later steps. Storing a credential or constructing a principal
+does not verify it. The verification evidence below records the original 3.2 step.
 
 ## Tables and migration
 

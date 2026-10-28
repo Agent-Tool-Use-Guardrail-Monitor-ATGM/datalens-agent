@@ -9,7 +9,7 @@ from statistics_agent.contracts.common import AuthenticatedPrincipal, AuthSessio
 
 
 class AuthorizedPrincipal(AuthenticatedPrincipal, AuthSessionReference):
-    """Only live verified access checks may supply this immutable principal."""
+    """Only current session and verified token checks may supply this principal."""
 
     roles: frozenset[Literal["user", "admin"]] = Field(min_length=1)
     email_verified: bool = Field(strict=True)

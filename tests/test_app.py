@@ -17,7 +17,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.testclient import TestClient
 from starlette.responses import StreamingResponse
 
-from statistics_agent.app import create_app
+from app_support import create_app
 from statistics_agent.core.logging import request_id_context
 from statistics_agent.core.settings import ConfigurationError, Settings
 
@@ -241,7 +241,7 @@ def test_docs_are_development_only_and_no_business_routes_exist(settings, enviro
     with TestClient(app) as client:
         assert client.get("/openapi.json").status_code == expected
         assert client.get("/docs").status_code == expected
-        for path in ("/runs", "/auth/login"):
+        for path in ("/runs", "/auth/me", "/auth/logout"):
             assert client.get(path).status_code == 404
 
 

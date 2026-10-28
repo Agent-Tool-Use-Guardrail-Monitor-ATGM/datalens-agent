@@ -12,7 +12,7 @@ permissions:
 jobs:
   tests:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     services:
       agent-test-postgres:
@@ -31,6 +31,7 @@ jobs:
 
     env:
       TEST_DATABASE_URL: postgresql+psycopg://agent_test:test-only-password@127.0.0.1:5432/agent_test_db
+      AUTH_BROWSER_TESTS: "1"
 
     steps:
       - name: Check out repository
@@ -48,5 +49,14 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install --no-deps --editable .
 
+      - name: Prepare browser and disposable Keycloak
+        run: |
+          python -m playwright install --with-deps chromium
+          docker compose -f compose.auth.test.yaml up -d --wait --wait-timeout 180
+
       - name: Run tests
         run: python -m pytest -q
+
+      - name: Remove disposable identity fixture
+        if: always()
+        run: docker compose -f compose.auth.test.yaml down
