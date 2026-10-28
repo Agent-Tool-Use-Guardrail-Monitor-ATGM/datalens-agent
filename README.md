@@ -1,5 +1,8 @@
 # DataLens statistics-agent development
 
+[Plan 3 integration evidence and frontend/agent handoff](docs/access-handoff.md)
+records the verified access contract and recovery/test procedures.
+
 Current startup requires auth settings and protected client-secret/encryption-key
 files, in addition to DATABASE_URL. See [browser login setup](docs/browser-login.md)
 before running the API. Missing configuration fails startup; there is no bypass.
@@ -722,4 +725,38 @@ The earlier CI visibility patch was discarded exactly as requested. User confirm
 No commit/push/remote CI result is claimed. Publish this branch through a PR and
 required `tests`. Parent plans remain outside service Git/PRs. Apply the new
 migration before running this revision against an older persistent database.
-Stop before 3.6; no frontend, business agent or deployment work was added.
+Step 3.5 delivery/pull is now accepted from the user confirmation; subsequent
+3.6 verification is recorded below.
+
+
+## Access integration and handoff — step 3.6
+
+Completed locally on `test/access-integration`; see [complete handoff](docs/access-handoff.md).
+Eight additional real integration cases prove captured email activation, actual
+API process restarts, encryption read-key rotation/loss/restoration, corrupt/
+missing key startup failure, actual Keycloak role/email/account/logout changes
+at JWT expiry, and real identity outages through warm/cold keys, expiry and local
+logout. The same old cookie remains denied after local revocation and restart.
+
+The isolated identity fixture now has its own PostgreSQL database on tmpfs and
+Mailpit, separate from the agent fixture/developer storage. It contains synthetic
+realms/users and a test-only administrator. Outage control targets only the fixed
+test Compose project. CI keeps the required job named `tests`, uses a bounded
+240-second identity startup and always cleans that explicit project afterward.
+No browser/mail/OAuth artifacts are published.
+
+Full regression: **339 passed**, no skips, in 289.31 seconds. Ruff, touched-file
+formatting and pip checks passed; one existing Starlette/HTTPX warning remains.
+Application code, dependencies and migrations were unchanged by this step.
+No persistent developer DB, real account/key or identity repository was touched.
+All prior protocol, ownership, CSRF, RSA/JWKS, two-instance and durable-refresh
+checks remain in the same gate. Actual Keycloak signing-key rotation, production
+SMTP/TLS, backup restoration and cloud delivery are not claimed.
+
+The handoff documents local provisioning, same-origin frontend cookie/CSRF use,
+401/403/503 handling, agent principal/ownership rules, restart/key recovery,
+cleanup and outage bounds. No frontend or business agent was implemented.
+
+No commit/push/remote CI result is claimed. Publish `test/access-integration`
+through a PR and required `tests` before final plan 3 delivery/sign-off. Parent
+plans/README are outside service Git/PRs. Stop here; plan 4 needs a separate request.
