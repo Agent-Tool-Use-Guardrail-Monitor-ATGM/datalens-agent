@@ -2,6 +2,8 @@
 .venv/
 venv/
 
+.vscode/
+
 # Python bytecode and build artifacts.
 __pycache__/
 *.py[cod]

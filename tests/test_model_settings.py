@@ -18,6 +18,12 @@ def clean_model_environment(monkeypatch):
         "LLM_TIMEOUT_SECONDS",
         "LLM_MAX_RETRIES",
         "LLM_CONCURRENCY",
+        "LLM_RUN_INPUT_BUDGET",
+        "LLM_RUN_OUTPUT_BUDGET",
+        "LLM_MAX_STEPS",
+        "LLM_RUN_TIMEOUT_SECONDS",
+        "LLM_TOOL_TIMEOUT_SECONDS",
+        "LLM_RETRY_MAX_DELAY_SECONDS",
     ):
         monkeypatch.delenv(key, raising=False)
 

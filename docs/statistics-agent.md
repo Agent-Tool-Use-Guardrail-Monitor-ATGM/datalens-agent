@@ -1,7 +1,8 @@
 # Statistics Agent, prompts and run isolation — step 4.4
 
-Updated: 29 October 2026. Complete locally on `feature/statistics-agent`; required
-PR CI pending. This is an internal execution component, not an HTTP run API.
+Updated: 29 October 2026. Step 4.4 delivery accepted from user pull confirmation.
+Subsequent [4.5 execution limits](execution-limits.md) replace the placeholder
+budget/deadline behavior described in this historical step record. This is an internal execution component, not an HTTP run API.
 
 ## Execution architecture
 

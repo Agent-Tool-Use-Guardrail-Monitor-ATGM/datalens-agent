@@ -21,7 +21,7 @@ class ModelProfile(Contract):
     model: str
     base_url: str
     api_style: Literal["chat_completions_v1"] = "chat_completions_v1"
-    configuration_version: Literal["model-profile-v1"] = "model-profile-v1"
+    configuration_version: Literal["model-profile-v2"] = "model-profile-v2"
     tool_calling: bool = True
     json_mode: bool = True
     json_schema: bool = False
@@ -31,6 +31,12 @@ class ModelProfile(Contract):
     timeout_seconds: float
     max_retries: int
     concurrency: int
+    run_input_budget: int
+    run_output_budget: int
+    max_steps: int
+    run_timeout_seconds: float
+    tool_timeout_seconds: float
+    retry_max_delay_seconds: float
     pricing_version: Literal["unpriced"] = "unpriced"
 
     @property
@@ -77,6 +83,27 @@ class ModelSettings(BaseSettings):
     max_retries: int = Field(default=2, ge=0, le=3, validation_alias="LLM_MAX_RETRIES")
     concurrency: int = Field(default=1, ge=1, le=4, validation_alias="LLM_CONCURRENCY")
 
+    run_input_budget: int = Field(
+        default=32768, ge=1, le=262144, validation_alias="LLM_RUN_INPUT_BUDGET"
+    )
+    run_output_budget: int = Field(
+        default=8192, ge=1, le=65536, validation_alias="LLM_RUN_OUTPUT_BUDGET"
+    )
+    max_steps: int = Field(default=8, ge=1, le=32, validation_alias="LLM_MAX_STEPS")
+    run_timeout_seconds: float = Field(
+        default=120,
+        ge=0.01,
+        le=600,
+        allow_inf_nan=False,
+        validation_alias="LLM_RUN_TIMEOUT_SECONDS",
+    )
+    tool_timeout_seconds: float = Field(
+        default=10, ge=0.01, le=60, allow_inf_nan=False, validation_alias="LLM_TOOL_TIMEOUT_SECONDS"
+    )
+    retry_max_delay_seconds: float = Field(
+        default=10, ge=0, le=60, allow_inf_nan=False, validation_alias="LLM_RETRY_MAX_DELAY_SECONDS"
+    )
+
     @field_validator("api_key")
     @classmethod
     def check_key(cls, value: SecretStr) -> SecretStr:
@@ -119,6 +146,12 @@ class ModelSettings(BaseSettings):
             timeout_seconds=self.timeout_seconds,
             max_retries=self.max_retries,
             concurrency=self.concurrency,
+            run_input_budget=self.run_input_budget,
+            run_output_budget=self.run_output_budget,
+            max_steps=self.max_steps,
+            run_timeout_seconds=self.run_timeout_seconds,
+            tool_timeout_seconds=self.tool_timeout_seconds,
+            retry_max_delay_seconds=self.retry_max_delay_seconds,
         )
 
 

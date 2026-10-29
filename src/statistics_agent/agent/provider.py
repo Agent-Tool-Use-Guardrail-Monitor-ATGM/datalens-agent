@@ -12,6 +12,7 @@ from uuid import uuid4
 import httpx
 from pydantic import ValidationError
 
+from statistics_agent.agent.limits import ModelLimiter, provider_limiter
 from statistics_agent.contracts.agent import (
     EventSink,
     ProviderFailure,
@@ -42,12 +43,16 @@ class ModelAdapter:
         sequence: Callable[[], int],
         *,
         transport: httpx.AsyncBaseTransport | None = None,
+        limiter: ModelLimiter | None = None,
     ):
         self.profile = settings.resolve()
         self._key = settings.api_key
         self._sink = sink
         self._sequence = sequence
         self._transport = transport
+        self._limiter = limiter or provider_limiter(self.profile.provider, self.profile.concurrency)
+        if self._limiter.capacity != self.profile.concurrency:
+            raise AdapterError("Model limiter does not match configured concurrency")
 
     async def _emit(self, request, kind, data):
         event = EventEnvelope(
@@ -72,7 +77,7 @@ class ModelAdapter:
             pass
         raise EvidenceDeliveryError("Model evidence delivery failed")
 
-    async def complete(self, request: ProviderRequest, *, tools: list[dict] | None = None):
+    def _payload(self, request: ProviderRequest, tools: list[dict] | None = None):
         if request.profile != self.profile.reference:
             raise AdapterError("Model profile reference mismatch")
         if request.max_output_tokens > self.profile.max_output_tokens:
@@ -110,6 +115,14 @@ class ModelAdapter:
             payload.update(tools=tools, parallel_tool_calls=False)
         if len(json.dumps(payload).encode()) > 65_536:
             raise AdapterError("Model request exceeds byte limit")
+        return payload
+
+    def input_reservation(self, request: ProviderRequest, *, tools=None) -> int:
+        """Conservative byte-based admission estimate, not reported token usage."""
+        return len(json.dumps(self._payload(request, tools), ensure_ascii=False).encode()) + 256
+
+    async def complete(self, request: ProviderRequest, *, tools: list[dict] | None = None):
+        payload = self._payload(request, tools)
         started = datetime.now(UTC)
         start = time.monotonic()
         budget = min(self.profile.timeout_seconds, (request.deadline - started).total_seconds())
@@ -117,54 +130,57 @@ class ModelAdapter:
         retry_after = None
         body = None
         failure = None
+        sent = False
         try:
             if budget <= 0:
                 raise TimeoutError
             async with asyncio.timeout(budget):
-                async with httpx.AsyncClient(
-                    transport=self._transport,
-                    follow_redirects=False,
-                    trust_env=False,
-                    timeout=budget,
-                ) as client:
-                    async with client.stream(
-                        "POST",
-                        self.profile.base_url + "/chat/completions",
-                        json=payload,
-                        headers={"Authorization": "Bearer " + self._key.get_secret_value()},
-                    ) as response:
-                        status = response.status_code
-                        if response.headers.get("retry-after"):
-                            try:
-                                value = float(response.headers["retry-after"])
-                                if math.isfinite(value) and 0 <= value <= 3600:
-                                    retry_after = value
-                            except ValueError:
-                                pass
-                        if status != 200:
-                            category = (
-                                "authentication"
-                                if status in (401, 403)
-                                else "rate_limit"
-                                if status == 429
-                                else "provider_error"
-                            )
-                            failure = ProviderFailure(
-                                attempt=request.attempt,
-                                category=category,
-                                http_status=status,
-                                retry_after_seconds=retry_after,
-                            )
-                        else:
-                            raw = bytearray()
-                            async for chunk in response.aiter_bytes():
-                                raw.extend(chunk)
-                                if len(raw) > MAX_RESPONSE_BYTES:
-                                    raise ValueError
-                            body = json.loads(raw)
+                async with self._limiter.slot():
+                    sent = True
+                    async with httpx.AsyncClient(
+                        transport=self._transport,
+                        follow_redirects=False,
+                        trust_env=False,
+                        timeout=budget,
+                    ) as client:
+                        async with client.stream(
+                            "POST",
+                            self.profile.base_url + "/chat/completions",
+                            json=payload,
+                            headers={"Authorization": "Bearer " + self._key.get_secret_value()},
+                        ) as response:
+                            status = response.status_code
+                            if response.headers.get("retry-after"):
+                                try:
+                                    value = float(response.headers["retry-after"])
+                                    if math.isfinite(value) and value >= 0:
+                                        retry_after = value
+                                except ValueError:
+                                    pass
+                            if status != 200:
+                                category = (
+                                    "authentication"
+                                    if status in (401, 403)
+                                    else "rate_limit"
+                                    if status == 429
+                                    else "provider_error"
+                                )
+                                failure = ProviderFailure(
+                                    attempt=request.attempt,
+                                    category=category,
+                                    http_status=status,
+                                    retry_after_seconds=retry_after,
+                                )
+                            else:
+                                raw = bytearray()
+                                async for chunk in response.aiter_bytes():
+                                    raw.extend(chunk)
+                                    if len(raw) > MAX_RESPONSE_BYTES:
+                                        raise ValueError
+                                body = json.loads(raw)
         except (httpx.TimeoutException, TimeoutError):
             failure = ProviderFailure(
-                attempt=request.attempt, category="timeout", outcome_unknown=True
+                attempt=request.attempt, category="timeout", outcome_unknown=sent
             )
         except httpx.RequestError:
             failure = ProviderFailure(
