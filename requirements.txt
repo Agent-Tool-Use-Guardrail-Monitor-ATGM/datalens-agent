@@ -2,7 +2,7 @@
 # Update these verified direct versions deliberately; pip resolves transitives.
 fastapi==0.158.0
 uvicorn==0.54.0
-pydantic==2.14.1
+pydantic==2.12.5
 pydantic-settings==2.16.1
 SQLAlchemy[asyncio]==2.0.55
 psycopg[binary]==3.3.6
@@ -15,3 +15,6 @@ ruff==0.17.1
 PyJWT[crypto]==2.15.1
 cryptography==50.0.2
 playwright==1.64.1
+
+# CrewAI custom BaseLLM boundary; requires Pydantic below 2.13.
+crewai==1.15.33
