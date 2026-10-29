@@ -798,3 +798,16 @@ CrewAI 1.15.33 requires the Pydantic pin to change to 2.12.5. Verification:
 **302 passed, 101 database/browser tests deselected**; Ruff/pip checks passed.
 Docker Linux engine was stopped, so full integration remains required in CI.
 No live model requests. Stop before 4.4.
+
+
+## Statistics Agent and run isolation — step 4.4
+
+Complete locally on `feature/statistics-agent`; required PR CI pending.
+[Agent handoff](docs/statistics-agent.md) covers one CrewAI Agent per session,
+versioned prompts/output, controlled typed tool/policy continuation and isolated
+state. Explicit incomplete outcomes cover provider/tool failures and invalid
+result references. No real numerical tool, HTTP run API or live model call yet.
+
+Verification: **315 passed, 101 database/browser tests deselected**; final targeted
+agent tests **13 passed**. Ruff/format/pip/diff checks pass. CrewAI reports 43 upstream
+deprecation warnings. No dependency or migration changes. Stop before 4.5.

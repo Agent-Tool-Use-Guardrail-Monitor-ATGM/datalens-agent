@@ -176,6 +176,7 @@ class ToolResult(Contract):
     tool_call_id: UUID
     status: Literal["completed", "failed", "timed_out", "unknown"]
     artifact: ArtifactReference | None = None
+    summary: BoundedText | None = Field(default=None, repr=False)
 
 
 class Provider(Protocol):
