@@ -1,7 +1,8 @@
 # LLM adapter — step 4.3
 
-Updated: 29 October 2026. Implemented locally on `feature/llm-adapter`;
-PR/required `tests` remains the delivery gate.
+Updated: 29 October 2026. Step 4.3 delivery accepted from user pull confirmation.
+Subsequent [4.4 Agent setup](statistics-agent.md) adds the controlled typed continuation;
+the historical scope/evidence below describes 4.3.
 
 ## Implemented boundaries
 
