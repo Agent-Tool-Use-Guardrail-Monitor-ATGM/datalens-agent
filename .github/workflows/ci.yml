@@ -32,6 +32,8 @@ jobs:
     env:
       TEST_DATABASE_URL: postgresql+psycopg://agent_test:test-only-password@127.0.0.1:5432/agent_test_db
       AUTH_BROWSER_TESTS: "1"
+      OTEL_SDK_DISABLED: "true"
+      PYTHON_DOTENV_DISABLED: "1"
 
     steps:
       - name: Check out repository

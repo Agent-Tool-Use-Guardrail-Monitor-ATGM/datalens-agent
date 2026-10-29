@@ -1,5 +1,8 @@
 # Model configuration — step 4.2
 
+Delivery through 4.2 is accepted from user pull confirmation. For subsequent
+local step 4.3 adapter work and dependency changes, see [adapter handoff](llm-adapter.md).
+
 `statistics_agent.core.model_settings.load_model_settings(env_file=".env")` reads
 an explicitly selected UTF-8 file, with process environment taking precedence.
 Without that argument, it reads environment variables only. It performs no

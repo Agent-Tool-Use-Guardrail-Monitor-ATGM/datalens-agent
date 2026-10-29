@@ -71,7 +71,7 @@ The future API and worker share this service environment; a separate Python
 microservice would have its own `.venv/` and requirements file. Keycloak and the
 frontend keep their own toolchains.
 
-## Configuration — step 1.3
+## Configuration вЂ” step 1.3
 
 Use `statistics_agent.core.settings.load_settings()` to load process environment
 variables and defaults. It performs no network/database operations. Local dotenv
@@ -93,16 +93,16 @@ Kafka credentials are needed for foundation configuration.
 
 | Variable | Default | Accepted value / unit |
 |---|---|---|
-| `DATABASE_URL` | Required | `postgresql+psycopg://...` with host, username and database; 1–4096 characters |
+| `DATABASE_URL` | Required | `postgresql+psycopg://...` with host, username and database; 1вЂ“4096 characters |
 | `APP_ENV` | `development` | `development`, `test`, `staging`, `production` |
 | `SERVICE_NAME` | `agent-api` | `agent-api` or future `agent-worker` process role |
-| `SERVICE_VERSION` | `0.1.0` | 1–64 characters, starting with a digit; version-safe letters/numbers and `.+_-` |
+| `SERVICE_VERSION` | `0.1.0` | 1вЂ“64 characters, starting with a digit; version-safe letters/numbers and `.+_-` |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
-| `DB_POOL_SIZE` | `5` | 1–20 connections |
-| `DB_CONNECT_TIMEOUT_SECONDS` | `5` | 1–60 seconds |
-| `DB_POOL_TIMEOUT_SECONDS` | `10` | 0.1–60 seconds |
-| `DB_STATEMENT_TIMEOUT_MS` | `10000` | 100–300000 milliseconds |
-| `DB_HEALTH_TIMEOUT_SECONDS` | `2` | 0.05–10 seconds; strictly below connect, pool and statement timeouts |
+| `DB_POOL_SIZE` | `5` | 1вЂ“20 connections |
+| `DB_CONNECT_TIMEOUT_SECONDS` | `5` | 1вЂ“60 seconds |
+| `DB_POOL_TIMEOUT_SECONDS` | `10` | 0.1вЂ“60 seconds |
+| `DB_STATEMENT_TIMEOUT_MS` | `10000` | 100вЂ“300000 milliseconds |
+| `DB_HEALTH_TIMEOUT_SECONDS` | `2` | 0.05вЂ“10 seconds; strictly below connect, pool and statement timeouts |
 
 Process names are `agent-api` and `agent-worker`, independent of the repository name. Legacy prefixed SERVICE_NAME values
 `datalens-agent-api` and `datalens-agent-worker` remain accepted as input aliases and normalize to
@@ -121,7 +121,7 @@ The application factory now loads and shares one settings object per app.
 Lifespan now creates/disposes the agent database pool; connections are lazy.
 Step 1.7 enforces pool/connect/statement limits when database work is performed.
 
-## Shared contracts — step 1.4
+## Shared contracts вЂ” step 1.4
 
 `statistics_agent.contracts` provides immutable principal/auth-session,
 configuration and artifact references; HTTP error envelopes and request-ID
@@ -159,7 +159,7 @@ serialization compatibility, not a complete execution trace. Unknown usage
 remains `null`. Unknown top-level fields/versions are rejected; adding fields
 requires compatible readers before producer rollout, or a schema-version change.
 
-## FastAPI shell — step 1.6
+## FastAPI shell вЂ” step 1.6
 
 `statistics_agent.app.create_app(settings=None, log_stream=None)` returns an
 isolated FastAPI application. Supply validated settings in tests or let the
@@ -205,7 +205,7 @@ Lifespan follows the [FastAPI context-manager interface](https://fastapi.tiangol
 The existing CI job runs the new tests automatically when their branch is opened
 as a PR. No dependencies or workflow changes were needed for this step.
 
-## PostgreSQL foundation — step 1.7
+## PostgreSQL foundation вЂ” step 1.7
 
 The agent owns its schema and application SQL in this repository. PostgreSQL is
 an independent container/process with private credentials and persistent storage;
@@ -320,7 +320,7 @@ Sources: [SQLAlchemy async sessions](https://docs.sqlalchemy.org/en/20/orm/exten
 [Psycopg Windows asyncio requirements](https://www.psycopg.org/psycopg3/docs/advanced/async.html).
 Step 1.8 now supplies an explicit empty baseline; no business tables were added.
 
-## Alembic baseline and schema gate — step 1.8
+## Alembic baseline and schema gate вЂ” step 1.8
 
 Migration scripts live inside `src/statistics_agent/persistence/migrations/`, so
 they ship in the application package. `alembic.ini` points to that package and
@@ -387,7 +387,7 @@ route was introduced. Implementation branch: `feature/alembic-baseline`.
 Sources: [Alembic async/connection sharing](https://alembic.sqlalchemy.org/en/latest/cookbook.html#using-asyncio-with-alembic),
 [revision inspection](https://alembic.sqlalchemy.org/en/latest/api/runtime.html#alembic.runtime.migration.MigrationContext.get_current_heads).
 
-## Liveness and readiness — step 1.9
+## Liveness and readiness вЂ” step 1.9
 
 - `GET /health/live` returns 200 with `{"status":"alive"}` when the process can
   serve HTTP. It never accesses PostgreSQL, Keycloak, Kafka or an LLM.
@@ -433,7 +433,7 @@ failure, development documentation and low-volume probe logging. Ruff lint/forma
 and dependency consistency pass; one existing TestClient/HTTPX warning remains.
 No dependency, Docker image, cloud resource or additional CI job was introduced.
 
-## Naming update — 23 October 2026
+## Naming update вЂ” 23 October 2026
 
 On `refactor/datalens-service-names`, all owned process/Compose service names
 use `datalens-`: API/worker, persistent database and disposable test database.
@@ -457,7 +457,7 @@ No implementation commit, push or PR was performed; required GitHub CI is pendin
 
 ## Development status
 
-Steps 1.1–1.9 are merged into main; health PR #6 reached `58da046` with
+Steps 1.1вЂ“1.9 are merged into main; health PR #6 reached `58da046` with
 successful required tests. The naming branch has 154 passing tests; main's
 pre-rename suite had 150. Step 1.10 has local fresh-environment evidence, but its
 separate verification document is absent from fetched main; documentation
@@ -538,7 +538,7 @@ PR #2 delivered the initial workflow and contracts with passing GitHub checks;
 step 1.6 is also merged into origin/main. The user confirmed prerequisite branch
 protection; effective remote rules were not independently audited. Keep `tests`
 required, require PRs and an up-to-date branch, and restrict direct-push/bypass
-permissions. Steps 1.7–1.9 are merged into fetched origin/main. The naming refactor requires
+permissions. Steps 1.7вЂ“1.9 are merged into fetched origin/main. The naming refactor requires
 its own PR and latest-revision tests; nothing was staged, committed, pushed or
 merged during this change.
 
@@ -552,7 +552,7 @@ folder names retain `datalens-`; Compose projects retain environment scope.
 Existing physical volume names are preserved to avoid replacing stored data.
 
 
-## Authentication configuration — step 3.1
+## Authentication configuration вЂ” step 3.1
 
 Implemented locally on `feature/auth-configuration`. See
 [configuration, secret formats and verification](docs/auth-configuration.md).
@@ -578,7 +578,7 @@ and implementation belong in its PR; parent planning files remain outside Git.
 Step 3.1 delivery is now accepted from the user's pull/check confirmation.
 
 
-## Planned local token authorization — 27 October 2026
+## Planned local token authorization вЂ” 27 October 2026
 
 Per the revised plan, protected requests will validate signed JWTs locally using
 trusted cached keys and local session state. No per-request Keycloak introspection.
@@ -593,7 +593,7 @@ opaque cookie/CSRF design. See [the configuration guide](docs/auth-configuration
 and updated identity handoff. This policy revision changed documentation only;
 active agent login and authorization remain unimplemented.
 
-## Encrypted session storage — step 3.2
+## Encrypted session storage вЂ” step 3.2
 
 Implemented locally on `feature/session-storage`. See
 [storage behavior, migration and verification](docs/auth-storage.md).
@@ -617,7 +617,7 @@ Step 3.2 delivery/pull is accepted from the user confirmation; subsequent 3.3
 implementation is recorded below.
 
 
-## Browser login and callback — step 3.3
+## Browser login and callback вЂ” step 3.3
 
 Implemented locally on `feature/browser-login`. See [setup, flow and fixture
 commands](docs/browser-login.md). GET `/auth/login` redirects to Keycloak with
@@ -654,7 +654,7 @@ with required `tests`. Parent plans/README remain outside service Git/PRs. Stop
 before 3.4; it requires a separate request.
 
 
-## Protected requests and ownership — step 3.4
+## Protected requests and ownership вЂ” step 3.4
 
 Implemented locally on `feature/token-authorization`. Step 3.3 delivery/pull is
 accepted from the user's confirmation. See [request behavior and route integration](docs/request-authorization.md).
@@ -688,7 +688,7 @@ through a PR and required `tests`; parent plans stay outside service Git/PRs.
 Step 3.4 delivery/pull is now accepted from the user confirmation.
 
 
-## Automatic refresh and logout — step 3.5
+## Automatic refresh and logout вЂ” step 3.5
 
 Implemented locally on `feature/session-refresh-logout`; see
 [protocol, migration and recovery](docs/session-refresh-logout.md). An otherwise-
@@ -729,7 +729,7 @@ Step 3.5 delivery/pull is now accepted from the user confirmation; subsequent
 3.6 verification is recorded below.
 
 
-## Access integration and handoff — step 3.6
+## Access integration and handoff вЂ” step 3.6
 
 Completed locally on `test/access-integration`; see [complete handoff](docs/access-handoff.md).
 Eight additional real integration cases prove captured email activation, actual
@@ -761,7 +761,7 @@ Step 3.6 delivery is now accepted from the user pull confirmation. Parent
 plans/README remain outside service Git/PRs.
 
 
-## Agent interfaces — step 4.1
+## Agent interfaces вЂ” step 4.1
 
 Complete locally on `feature/agent-contracts`; PR/required `tests` CI pending.
 [Agent contracts and remaining handoffs](docs/agent-contracts.md) define provider
@@ -777,7 +777,7 @@ Stop before 4.2 provider profiles/secrets. User publishes this branch through a
 PR to main; no commit, push or remote CI success is claimed here.
 
 
-## Provider profiles and secrets — step 4.2
+## Provider profiles and secrets вЂ” step 4.2
 
 Complete locally on `feature/provider-profiles`; PR/required CI pending.
 [Model configuration](docs/model-configuration.md) defines Groq-first/Azure profiles,
@@ -785,3 +785,16 @@ Complete locally on `feature/provider-profiles`; PR/required CI pending.
 The existing key was neither read nor sent. Loader integration/model calls remain 4.3.
 Verification: 277 passed, 101 database/browser tests deselected; Ruff/pip checks pass.
 No dependency or migration changes. Stop before 4.3.
+
+
+## LLM adapter and evidence — step 4.3
+
+Complete locally on `feature/llm-adapter`; required PR CI pending.
+[Adapter handoff](docs/llm-adapter.md) documents single-attempt Groq/Azure HTTPX
+normalization, actual CrewAI BaseLLM integration, redacted evidence and controlled
+tool handoff. No new HTTP routes or executable statistics Agent yet.
+
+CrewAI 1.15.33 requires the Pydantic pin to change to 2.12.5. Verification:
+**302 passed, 101 database/browser tests deselected**; Ruff/pip checks passed.
+Docker Linux engine was stopped, so full integration remains required in CI.
+No live model requests. Stop before 4.4.
