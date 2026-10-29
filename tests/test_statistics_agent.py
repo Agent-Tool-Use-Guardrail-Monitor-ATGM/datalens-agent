@@ -29,7 +29,9 @@ class Sink:
         self.events.append(event)
 
 
-def create(*, scenario="success", allow=True, access=True, executor_fails=False):
+def create(
+    *, scenario="success", allow=True, access=True, executor_fails=False, settings_overrides=None
+):
     captured = []
     executed = []
     sink = Sink()
@@ -116,7 +118,11 @@ def create(*, scenario="success", allow=True, access=True, executor_fails=False)
     class Policy:
         async def evaluate(self, owner, proposal):
             assert owner == context
-            assert sink.events[0].event_type.value == "tool_call.requested"
+            assert any(
+                e.event_type.value == "tool_call.requested"
+                and e.data["tool_call_id"] == str(proposal.tool_call_id)
+                for e in sink.events
+            )
             return ToolDecision(
                 tool_call_id=proposal.tool_call_id,
                 allowed=allow,
@@ -147,7 +153,9 @@ def create(*, scenario="success", allow=True, access=True, executor_fails=False)
         checks.append(owner)
         return access.pop(0) if isinstance(access, list) else access
 
-    settings = ModelSettings(SERVICE_MODEL_API_KEY="synthetic-key", _env_file=None)
+    settings = ModelSettings(
+        SERVICE_MODEL_API_KEY="synthetic-key", _env_file=None, **(settings_overrides or {})
+    )
     adapter = ModelAdapter(settings, sink, sequence, transport=httpx.MockTransport(handler))
     reference = ConfigurationReference(config_id=uuid4(), version="fixture-v1")
     session = StatisticsSession(

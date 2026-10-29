@@ -10,6 +10,10 @@ network requests. Application startup is not wired to this loader yet: the model
 adapter/composition work belongs to 4.3. Existing auth/health startup does not
 suddenly require a model secret.
 
+Step 4.5 adds [execution limits](execution-limits.md), model-profile-v2 snapshots,
+process-level admission and run usage accounting. The historical 4.2 scope below
+predates those controls.
+
 ## Server configuration
 
 - `LLM_PROFILE`: `groq_free` (default) or `azure_student`.

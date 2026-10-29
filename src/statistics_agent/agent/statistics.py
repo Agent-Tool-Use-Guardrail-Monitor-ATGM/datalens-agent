@@ -1,9 +1,10 @@
 """One isolated CrewAI Agent with a controlled, typed model/tool continuation."""
 
+import asyncio
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal, Self
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
@@ -11,6 +12,7 @@ from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from statistics_agent.agent.crewai_llm import Agent, StatisticsLLM
+from statistics_agent.agent.limits import RunStopped
 from statistics_agent.agent.provider import AdapterError, EvidenceDeliveryError, ModelAdapter
 from statistics_agent.contracts.agent import (
     AgentContext,
@@ -28,7 +30,7 @@ from statistics_agent.contracts.agent import (
     ToolPolicy,
     ToolResult,
 )
-from statistics_agent.contracts.common import ConfigurationReference, Contract
+from statistics_agent.contracts.common import ConfigurationReference, Contract, ShortReference
 from statistics_agent.contracts.events import EventEnvelope
 
 
@@ -58,6 +60,7 @@ class StatisticsAnswer(Contract):
 
 
 class StatisticsRun(Contract):
+    terminal_reason: ShortReference = "unspecified"
     answer: StatisticsAnswer
     state: AgentState = Field(repr=False)
     results: tuple[ToolResult, ...] = Field(default=(), max_length=128, repr=False)
@@ -121,6 +124,7 @@ class StatisticsSession:
         sink: EventSink,
         sequence: Callable[[], int],
         deadline: datetime,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ):
         if len(bindings) > 32 or len({b.name for b in bindings}) != len(bindings):
             raise AdapterError("Invalid tool registry")
@@ -129,6 +133,10 @@ class StatisticsSession:
         self._policy, self._executor, self._authorize = policy, executor, authorize
         self._sink, self._sequence = sink, sequence
         self._used = False
+        self._profile = adapter.profile
+        self._adapter = adapter
+        self._sleep = sleep
+        self._results = []
         self._state = AgentState(
             context=context,
             versions=AgentVersions(
@@ -137,13 +145,21 @@ class StatisticsSession:
                 toolset=toolset,
                 policy=policy_version,
             ),
-            remaining_steps=8,
-            remaining_input_tokens=adapter.profile.input_token_budget,
-            remaining_output_tokens=adapter.profile.max_output_tokens,
+            remaining_steps=adapter.profile.max_steps,
+            remaining_input_tokens=adapter.profile.run_input_budget,
+            remaining_output_tokens=adapter.profile.run_output_budget,
             deadline=deadline,
         )
+        self._state = self._state.model_copy(
+            update={
+                "deadline": min(
+                    self._state.deadline,
+                    datetime.now(UTC) + timedelta(seconds=self._profile.run_timeout_seconds),
+                )
+            }
+        )
         self._output_limit = adapter.profile.max_output_tokens
-        self._llm = StatisticsLLM(adapter, context, deadline)
+        self._llm = StatisticsLLM(adapter, context, self._state.deadline)
         self.agent = Agent(
             role=ROLE,
             goal=GOAL,
@@ -156,7 +172,7 @@ class StatisticsSession:
             cache=False,
             verbose=False,
             max_retry_limit=0,
-            max_iter=8,
+            max_iter=adapter.profile.max_steps,
             respect_context_window=False,
         )
 
@@ -184,10 +200,131 @@ class StatisticsSession:
         except Exception:
             return False
 
+    def _finish(self, status, explanation, reason="incomplete"):
+        state = AgentState.model_validate(self._state.model_dump())
+        return StatisticsRun(
+            terminal_reason=reason,
+            answer=StatisticsAnswer(status=status, explanation=explanation),
+            state=state,
+            results=tuple(self._results),
+        )
+
     async def run(self, question: str, datasets: tuple[DatasetSummary, ...]) -> StatisticsRun:
         if self._used:
             raise AdapterError("Statistics sessions are single use")
         self._used = True
+        try:
+            budget = (self._state.deadline - datetime.now(UTC)).total_seconds()
+            if budget <= 0:
+                raise RunStopped("deadline_exceeded")
+            async with asyncio.timeout(budget):
+                return await self._run(question, datasets)
+        except TimeoutError:
+            return self._finish(
+                "incomplete", "The analysis deadline was reached.", "deadline_exceeded"
+            )
+        except RunStopped as error:
+            explanation = "The analysis stopped at its execution limit."
+            if error.reason.startswith("model_"):
+                explanation = "The model could not complete the analysis."
+            elif error.reason == "access_unavailable":
+                explanation = "Access is unavailable for this operation."
+            return self._finish("incomplete", explanation, error.reason)
+        except EvidenceDeliveryError:
+            raise
+        except AdapterError:
+            return self._finish(
+                "incomplete", "The model request could not be admitted.", "invalid_model_request"
+            )
+
+    async def _model_call(self):
+        logical_id = uuid4()
+        for index in range(1, self._profile.max_retries + 2):
+            if not await self._has_access():
+                raise RunStopped("access_unavailable")
+            if self._state.remaining_steps <= 0:
+                raise RunStopped("step_budget_exhausted")
+            if self._state.remaining_output_tokens <= 0:
+                raise RunStopped("output_budget_exhausted")
+            context = self._state.context
+            request = ProviderRequest(
+                attempt=ModelAttempt(
+                    run_id=context.run_id,
+                    session_id=context.session_id,
+                    request_id=context.request_id,
+                    model_call_id=logical_id,
+                    attempt_index=index,
+                ),
+                profile=self._state.versions.provider,
+                messages=self._state.messages,
+                max_output_tokens=min(self._output_limit, self._state.remaining_output_tokens),
+                deadline=self._state.deadline,
+            )
+            reserved = self._adapter.input_reservation(request, tools=self._schemas)
+            if reserved > self._profile.input_token_budget:
+                raise RunStopped("request_input_limit")
+            if reserved > self._state.remaining_input_tokens:
+                raise RunStopped("input_budget_exhausted")
+            # Unknown usage retains full reservations; known totals can refund them.
+            self._state = self._state.model_copy(
+                update={
+                    "remaining_steps": self._state.remaining_steps - 1,
+                    "remaining_input_tokens": self._state.remaining_input_tokens - reserved,
+                    "remaining_output_tokens": self._state.remaining_output_tokens
+                    - request.max_output_tokens,
+                }
+            )
+            response = await self._llm.complete_request(request, tools=self._schemas)
+            self._state = self._state.model_copy(
+                update={"completed_attempts": self._state.completed_attempts + 1}
+            )
+            if not isinstance(response, ProviderFailure):
+                input_used = response.usage.input_tokens
+                output_used = response.usage.output_tokens
+                self._state = self._state.model_copy(
+                    update={
+                        "remaining_input_tokens": max(
+                            0,
+                            self._state.remaining_input_tokens
+                            + reserved
+                            - (input_used if input_used is not None else reserved),
+                        ),
+                        "remaining_output_tokens": max(
+                            0,
+                            self._state.remaining_output_tokens
+                            + request.max_output_tokens
+                            - (
+                                output_used
+                                if output_used is not None
+                                else request.max_output_tokens
+                            ),
+                        ),
+                    }
+                )
+                if (input_used is not None and input_used > reserved) or (
+                    output_used is not None and output_used > request.max_output_tokens
+                ):
+                    raise RunStopped("reported_usage_exceeded_reservation")
+                return response
+            retryable = response.category == "rate_limit" or (
+                response.category == "provider_error"
+                and response.http_status in {500, 502, 503, 504}
+            )
+            if not retryable or response.outcome_unknown:
+                raise RunStopped("model_" + response.category)
+            if index > self._profile.max_retries:
+                raise RunStopped("model_retry_exhausted")
+            delay = response.retry_after_seconds
+            if delay is None:
+                delay = min(2 ** (index - 1), self._profile.retry_max_delay_seconds)
+            if delay > self._profile.retry_max_delay_seconds:
+                raise RunStopped("retry_delay_exceeded")
+            if delay >= (self._state.deadline - datetime.now(UTC)).total_seconds():
+                raise RunStopped("deadline_exceeded")
+            await self._sleep(delay)
+        raise RunStopped("model_retry_exhausted")
+
+    async def _run(self, question: str, datasets: tuple[DatasetSummary, ...]) -> StatisticsRun:
         if len(datasets) > 16:
             raise AdapterError("Too many datasets for one run")
         # Authentication identifiers and service secrets never enter model messages.
@@ -199,44 +336,14 @@ class StatisticsSession:
             AgentMessage(role="user", content=supplied),
         )
         self._state = self._state.model_copy(update={"messages": messages})
-        results = []
-
-        def finish(status, explanation):
-            state = AgentState.model_validate(self._state.model_dump())
-            return StatisticsRun(
-                answer=StatisticsAnswer(status=status, explanation=explanation),
-                state=state,
-                results=tuple(results),
-            )
-
-        for _ in range(8):  # Structural bound; token/retry/deadline orchestration is 4.5.
-            if not await self._has_access():
-                return finish("incomplete", "Access is unavailable for this operation.")
+        results = self._results
+        for _ in range(self._profile.max_steps):
             context = self._state.context
-            request = ProviderRequest(
-                attempt=ModelAttempt(
-                    run_id=context.run_id,
-                    session_id=context.session_id,
-                    request_id=context.request_id,
-                    model_call_id=uuid4(),
-                    attempt_index=1,
-                ),
-                profile=self._state.versions.provider,
-                messages=self._state.messages,
-                max_output_tokens=self._output_limit,
-                deadline=self._state.deadline,
-            )
-            response = await self._llm.complete_request(request, tools=self._schemas)
-            self._state = self._state.model_copy(
-                update={
-                    "completed_attempts": self._state.completed_attempts + 1,
-                    "remaining_steps": self._state.remaining_steps - 1,
-                }
-            )
+            response = await self._model_call()
             if isinstance(response, ProviderFailure):
-                return finish("incomplete", "The model could not complete the analysis.")
+                return self._finish("incomplete", "The model could not complete the analysis.")
             if response.proposals and response.finish_reason != "tool_calls":
-                return finish("incomplete", "The model did not finish its tool request.")
+                return self._finish("incomplete", "The model did not finish its tool request.")
             if not response.proposals:
                 try:
                     answer = StatisticsAnswer.model_validate_json(response.content)
@@ -244,11 +351,13 @@ class StatisticsSession:
                     if not set(answer.result_ids) <= known or response.finish_reason != "stop":
                         raise ValueError
                 except (ValidationError, ValueError):
-                    return finish(
+                    return self._finish(
                         "incomplete", "The model did not return a valid supported result."
                     )
                 if len(self._state.messages) >= 128:
-                    return finish("incomplete", "The conversation reached its structural limit.")
+                    return self._finish(
+                        "incomplete", "The conversation reached its structural limit."
+                    )
                 self._state = self._state.model_copy(
                     update={
                         "messages": (
@@ -257,9 +366,14 @@ class StatisticsSession:
                         )
                     }
                 )
-                return StatisticsRun(answer=answer, state=self._state, results=tuple(results))
+                return StatisticsRun(
+                    terminal_reason=answer.status,
+                    answer=answer,
+                    state=self._state,
+                    results=tuple(results),
+                )
             if len(self._state.messages) + 1 + len(response.proposals) > 128:
-                return finish("incomplete", "The conversation reached its structural limit.")
+                return self._finish("incomplete", "The conversation reached its structural limit.")
             self._state = self._state.model_copy(
                 update={
                     "pending_tool_calls": response.proposals,
@@ -275,38 +389,43 @@ class StatisticsSession:
             if any(not i for i in external_ids) or len(set(external_ids)) != len(external_ids):
                 for proposal in response.proposals:
                     await self._outcome(proposal, "failed", "invalid_tool_identity")
-                return finish(
+                return self._finish(
                     "incomplete", "The tool requests have invalid correlation identities."
                 )
             for proposal in response.proposals:
                 binding = self._bindings.get(proposal.name)
                 if binding is None:
                     await self._outcome(proposal, "failed", "unknown_tool")
-                    return finish("incomplete", "The requested operation is not available.")
+                    return self._finish("incomplete", "The requested operation is not available.")
                 try:
                     binding.arguments.model_validate_json(proposal.raw_arguments, strict=True)
                 except ValidationError:
                     await self._outcome(proposal, "failed", "invalid_arguments")
-                    return finish("incomplete", "The requested operation has invalid arguments.")
+                    return self._finish(
+                        "incomplete", "The requested operation has invalid arguments."
+                    )
                 if not await self._has_access():
                     await self._outcome(proposal, "failed", "access_denied")
-                    return finish("incomplete", "Access is unavailable for this operation.")
+                    return self._finish("incomplete", "Access is unavailable for this operation.")
                 try:
                     decision = ToolDecision.model_validate(
                         await self._policy.evaluate(context, proposal)
                     )
                 except Exception:
                     await self._outcome(proposal, "failed", "policy_unavailable")
-                    return finish("incomplete", "Tool policy could not be checked.")
+                    return self._finish("incomplete", "Tool policy could not be checked.")
                 if decision.tool_call_id != proposal.tool_call_id or not decision.allowed:
                     await self._outcome(proposal, "failed", "policy_denied")
-                    return finish("incomplete", "The requested operation is not permitted.")
+                    return self._finish("incomplete", "The requested operation is not permitted.")
                 try:
-                    result = ToolResult.model_validate(
-                        await self._executor.execute(context, proposal)
-                    )
+                    async with asyncio.timeout(self._profile.tool_timeout_seconds):
+                        result = ToolResult.model_validate(
+                            await self._executor.execute(context, proposal)
+                        )
                     if result.tool_call_id != proposal.tool_call_id:
                         raise ValueError
+                except TimeoutError:
+                    result = ToolResult(tool_call_id=proposal.tool_call_id, status="timed_out")
                 except Exception:
                     result = ToolResult(tool_call_id=proposal.tool_call_id, status="failed")
                 await self._outcome(proposal, result.status, "execution_result")
@@ -316,7 +435,9 @@ class StatisticsSession:
                         update={"artifacts": (*self._state.artifacts, result.artifact)}
                     )
                 if result.status != "completed" or result.summary is None:
-                    return finish("incomplete", "A tool did not return a usable computed result.")
+                    return self._finish(
+                        "incomplete", "A tool did not return a usable computed result."
+                    )
                 try:
                     observation = AgentMessage(
                         role="tool",
@@ -332,9 +453,15 @@ class StatisticsSession:
                         ),
                     )
                 except ValidationError:
-                    return finish("incomplete", "The tool result exceeds conversation limits.")
+                    return self._finish(
+                        "incomplete", "The tool result exceeds conversation limits."
+                    )
                 self._state = self._state.model_copy(
                     update={"messages": (*self._state.messages, observation)}
                 )
             self._state = self._state.model_copy(update={"pending_tool_calls": ()})
-        return finish("incomplete", "The analysis exceeded the conversation step limit.")
+        return self._finish(
+            "incomplete",
+            "The analysis exceeded the conversation step limit.",
+            "step_budget_exhausted",
+        )

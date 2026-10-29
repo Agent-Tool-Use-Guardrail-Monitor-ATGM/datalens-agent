@@ -811,3 +811,16 @@ result references. No real numerical tool, HTTP run API or live model call yet.
 Verification: **315 passed, 101 database/browser tests deselected**; final targeted
 agent tests **13 passed**. Ruff/format/pip/diff checks pass. CrewAI reports 43 upstream
 deprecation warnings. No dependency or migration changes. Stop before 4.5.
+
+
+## Retry, budget and failure behavior — step 4.5
+
+Complete locally on `feature/retry-budgets`; PR/required CI pending.
+[Execution limits](docs/execution-limits.md) documents observed bounded retries,
+input reservations/output accounting, run/tool deadlines and shared process-level
+model admission. No exact-tokenizer, distributed quota or spend-cap claim is made.
+The existing real model key was not modified; no live provider request was made.
+
+Verification: **336 passed; 101 database/browser tests deselected**; Ruff/format,
+pip consistency and diff checks pass. CrewAI reports 115 upstream deprecation
+warnings. No dependencies or migrations changed. Stop before 4.6.
