@@ -107,3 +107,23 @@ gate; no repeat remote audit was performed after the user confirmed 4.3 pulled.
 4.5 implements observed retries and token/step/deadline/concurrency behavior;
 4.6 verifies live model compatibility. Plans 5–7 supply actual tools/policies,
 owned datasets, durable runs/outbox and HTTP APIs. Stop before 4.5.
+
+
+## Provider continuation correction — step 4.6
+
+The current prompt is statistics-v2. The runner declares a reserved
+`finalize_statistics` function with the existing StatisticsAnswer schema. This
+is an output-validation channel, not a numerical executor: it rechecks access,
+validates the answer and permits only successful computation IDs as references.
+It never executes a calculation or adds a numerical result. Mixed finalization/
+calculation batches and unknown names fail closed. Legacy assistant JSON remains
+locally validated for compatibility. The finalizer emits the existing requested/
+completed or failed tool events; consumers must distinguish it by tool name.
+
+The advertised reference enum is constrained to successful results already seen
+in this run; local provenance validation remains authoritative. Further numeric
+calculations remain allowed, subject to unchanged history/input limits. The
+three-round regression fixture reaches the existing conservative 4096-unit
+request cap after two computations and correctly returns incomplete.
+See [provider verification](provider-verification.md) for current evidence; the
+preceding step 4.4 counts and prompt version describe historical evidence.

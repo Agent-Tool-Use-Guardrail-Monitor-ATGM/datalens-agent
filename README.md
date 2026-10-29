@@ -824,3 +824,45 @@ The existing real model key was not modified; no live provider request was made.
 Verification: **336 passed; 101 database/browser tests deselected**; Ruff/format,
 pip consistency and diff checks pass. CrewAI reports 115 upstream deprecation
 warnings. No dependencies or migrations changed. Stop before 4.6.
+
+
+## Provider verification and handoff — step 4.6
+
+In progress pending clean required CI/delivery on `test/provider-verification`. The latest live Groq checks pass after a typed-finalization fix. [Verification guide](docs/provider-verification.md)
+adds an explicit `--live` synthetic check plus offline and real PostgreSQL/JWT/CSRF
+handoff tests. Groq selected the tool and the fixture computed mean 4.0, but the
+initial live final-answer flow failed; the continuation fix below supersedes that result. Azure remains
+unconfigured/unverified. Groq now has scoped synthetic live evidence.
+
+Verification: **427 passed, 17 browser tests deselected**; Ruff/format/pip/diff
+checks pass, 133 upstream CrewAI warnings. Pinned requirements unchanged; repaired
+the existing local .venv. No production endpoints, real dataset tools, migrations
+or cloud deployment. These initial counts are historical; see the current correction below. Clean required PR CI remains pending.
+Stop within 4.6; plan 5 has not started.
+
+
+## Pre-merge verification — 29 October 2026
+
+Full local gate: **444 passed, no skips**, including disposable PostgreSQL,
+Keycloak and Chromium. Ruff/pip/diff checks pass. The separate live Groq check
+computed mean 4.0 but then failed with HTTP 400 `tool_use_failed`; merge is not
+recommended as completed provider support. [Evidence](docs/provider-verification.md).
+No product code fixes were applied in this verification-only pass.
+
+
+## Current continuation fix and merge gate
+
+Groq finalization now uses a distinct validated answer function. Three latest
+consecutive live probes passed (computed mean 4.0; two HTTP 200 requests each).
+Earlier model errors remain rejected; no universal reliability claim is made.
+Full local gate: **449 passed, one browser assertion failed**; the failed case
+passed in isolation. Required GitHub tests must pass before merge.
+[Current evidence](docs/provider-verification.md#continuation-fix--29-october-2026-supersedes-earlier-live-blocker)
+supersedes the historical pre-merge blocker above. No production API/tool,
+dependency or database migration added. Stop within 4.6.
+
+Focused post-failure rerun: **47 passed**, 36 upstream warnings, 59.78 seconds.
+Includes the entire browser-login module plus native finalization, model adapter,
+provider verification and real PostgreSQL/JWT/CSRF handoff tests. No auth code
+or browser test was changed to obtain this result. Both disposable Docker test
+projects were removed after verification; Docker Desktop remains running.

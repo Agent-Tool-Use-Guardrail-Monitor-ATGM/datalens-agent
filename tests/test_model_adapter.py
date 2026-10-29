@@ -71,6 +71,8 @@ def test_attempt_usage_and_redacted_evidence(setup):
     def handler(request):
         calls.append(request)
         assert request.headers["authorization"] == "Bearer synthetic-key"
+        assert json.loads(request.content)["temperature"] == 0.6
+        assert json.loads(request.content)["reasoning_effort"] == "low"
         assert request.url == "https://api.groq.com/openai/v1/chat/completions"
         return httpx.Response(
             200,
@@ -289,6 +291,8 @@ def test_azure_uses_resolved_endpoint_and_deployment(setup):
             str(incoming.url) == "https://test-resource.openai.azure.com/openai/v1/chat/completions"
         )
         assert json.loads(incoming.content)["model"] == "test-deployment"
+        assert "temperature" not in json.loads(incoming.content)
+        assert "reasoning_effort" not in json.loads(incoming.content)
         return httpx.Response(200, json=body())
 
     adapter = adapter_for((settings, setup[1], request), handler)

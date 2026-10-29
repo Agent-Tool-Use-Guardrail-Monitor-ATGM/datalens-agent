@@ -110,6 +110,10 @@ class ModelAdapter:
             "max_completion_tokens": request.max_output_tokens,
             "stream": False,
         }
+        if self.profile.temperature is not None:
+            payload["temperature"] = self.profile.temperature
+        if self.profile.reasoning_effort is not None:
+            payload["reasoning_effort"] = self.profile.reasoning_effort
         if tools:
             self.profile.require()
             payload.update(tools=tools, parallel_tool_calls=False)
