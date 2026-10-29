@@ -21,7 +21,9 @@ class ModelProfile(Contract):
     model: str
     base_url: str
     api_style: Literal["chat_completions_v1"] = "chat_completions_v1"
-    configuration_version: Literal["model-profile-v2"] = "model-profile-v2"
+    configuration_version: Literal["model-profile-v3"] = "model-profile-v3"
+    temperature: Literal[0.6] | None = None
+    reasoning_effort: Literal["low"] | None = None
     tool_calling: bool = True
     json_mode: bool = True
     json_schema: bool = False
@@ -143,6 +145,8 @@ class ModelSettings(BaseSettings):
                 if self.profile == "groq_free"
                 else f"https://{self.azure_resource}.openai.azure.com/openai/v1"
             ),
+            temperature=0.6 if self.profile == "groq_free" else None,
+            reasoning_effort="low" if self.profile == "groq_free" else None,
             timeout_seconds=self.timeout_seconds,
             max_retries=self.max_retries,
             concurrency=self.concurrency,

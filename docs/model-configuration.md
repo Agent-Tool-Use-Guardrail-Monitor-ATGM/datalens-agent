@@ -74,3 +74,20 @@ warning. Ruff and pip checks pass. Existing Pydantic settings and HTTPX dependen
 are sufficient for this step; no SDK or CrewAI dependency is needed until 4.3.
 No migrations, provider calls or runtime endpoints changed. Required PR `tests`
 remains the delivery gate. Stop before 4.3.
+
+
+## Current Groq continuation profile — step 4.6
+
+Model-profile-v3 records temperature 0.6 and reasoning_effort low for the selected
+Groq openai/gpt-oss-20b profile. These parameters are included in its configuration
+snapshot/reference and request payload. Azure omits both parameters because its
+deployment capabilities have not been established. Provider/key selection and
+secrets are unchanged; there is no automatic provider fallback.
+
+A temperature-zero experiment exhausted the output budget in reasoning; it was
+not retained. Groq recommends nonzero temperature for reasoning models and
+supports low reasoning effort for GPT-OSS. Neither tool validation nor local
+schema/reference validation is disabled.
+Sources: [Groq reasoning](https://console.groq.com/docs/reasoning),
+[tool calling](https://console.groq.com/docs/tool-use/local-tool-calling).
+See [current verification](provider-verification.md) for scoped live evidence.

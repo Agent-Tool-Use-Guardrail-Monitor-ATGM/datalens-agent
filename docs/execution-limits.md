@@ -1,7 +1,8 @@
 # Execution limits and observed retries — step 4.5
 
-Updated: 29 October 2026. Complete locally on `feature/retry-budgets`;
-PR/required CI pending. No real inference request was performed.
+Updated: 29 October 2026. Step 4.5 delivery accepted from user pull confirmation.
+Subsequent [4.6 provider verification](provider-verification.md) remains in progress;
+this document preserves the execution-control implementation evidence. No real inference request was performed.
 
 ## Configuration
 
@@ -122,3 +123,10 @@ CrewAI deprecation warnings. Ruff/formatting, pip consistency and whitespace
 checks pass. Full required `tests` CI remains the delivery gate. No real model
 compatibility, cloud deployment, actual statistics implementation or durable
 worker behavior is claimed. Stop before 4.6 live-provider verification.
+
+
+Step 4.6 continuation correction preserves these budgets and admission rules.
+A reserved final-answer function adds schema/history overhead to the same input
+reservation; it receives no separate execution or budget bypass. A deterministic
+three-round fixture computes twice, then stops at request_input_limit before
+the third model call. No token budget was increased to make the fix pass.
