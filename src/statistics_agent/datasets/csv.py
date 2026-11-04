@@ -120,8 +120,8 @@ def _is_numeric(value: str) -> bool:
 def parse_csv(content: bytes, *, limits: DatasetLimits | None = None) -> ParsedDataset:
     """Validate a complete bounded byte value synchronously and return no partial data.
 
-    Step 5.4 must call this outside the async event loop and persist only after
-    validation succeeds. No file path, URL, stream or persistence callback accepted.
+    DatasetService offloads this work and persists only after validation succeeds.
+    No file path, URL, stream or persistence callback accepted.
     """
     bounds = DatasetLimits.model_validate(limits if limits is not None else DatasetLimits())
     if type(content) is not bytes or not content:

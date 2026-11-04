@@ -956,3 +956,26 @@ Ruff/format/pip checks pass. Standard library only; no dataframe/new dependency,
 schema, database, auth/provider or API changes. Parsing is synchronous and pure;
 5.4 must offload and compose parse-before-storage. Stop before that step.
 No commit/push/PR performed. Parent plans remain outside this service Git/PR.
+
+## Current implementation — internal dataset lifecycle 5.4
+
+Complete locally on feature/dataset-lifecycle; required PR tests/delivery pending.
+The previous CSV-validation branch is included in locally cached origin/main.
+[Dataset lifecycle](docs/dataset-lifecycle.md) now composes validated ingestion
+with owned storage, metadata/list/delete, bounded previews and authorized loading.
+Counts/columns derive from actual CSV, and load rechecks ownership/existence and
+metadata consistency after offloaded parsing. No client-supplied ownership/schema
+or bypass of validation is accepted through this service.
+
+Injected DatasetParser uses bounded threads with immediate busy rejection.
+Cancellation holds admission until real work ends; parsing-cancelled ingestion
+does not write later. The application must share one pool per process and close
+it after draining service work; no app/lifespan wiring or business route is added
+here. Current auth/session APIs are unchanged. No statistical computation yet.
+
+Added 22 tests. Full PostgreSQL/non-browser regression: 604 passed, 17 browser
+tests deselected, 151 upstream warnings; Ruff/format/pip checks pass. No migration,
+dependency, provider or cloud changes; schema stays 0004_dataset_storage. Only
+disposable test PostgreSQL used/removed, with Docker Desktop left running.
+No commit/push/PR performed. Stop before 5.5. Parent plans remain outside service
+Git/PRs; this README and lifecycle documentation are part of the service branch.
