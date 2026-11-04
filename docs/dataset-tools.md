@@ -1,6 +1,6 @@
 # Dataset storage and statistics tools — plan 5 handoff
 
-Updated: 3 November 2026. **5.1 contracts complete locally; required PR tests/delivery pending. 5.2–5.7 not started.**
+Updated: 4 November 2026. **5.1 delivered per user confirmation; 5.2 persistence complete locally, PR/tests delivery pending; 5.3–5.7 not started.**
 Plan 4.6 delivery is accepted from the user's pull confirmation. The provider
 verification fixture is not a production dataset tool or upload API.
 
@@ -20,9 +20,11 @@ verification fixture is not a production dataset tool or upload API.
 7. **5.7 — Integration/handoff:** real stored data and tools through the existing
    runner with mocked inference, bounded summaries/artifacts and ownership proof.
 
-Step 5.1 is complete locally on feature/dataset-contracts; see
-[contract semantics and verification](dataset-contracts.md). Steps 5.2–5.7 are
-Not started. Next implementation is 5.2 after 5.1 delivery.
+Step 5.1 delivery is accepted per user confirmation; see
+[contract semantics and verification](dataset-contracts.md). Step 5.2 is complete
+locally on feature/dataset-storage; [storage handoff](dataset-storage.md) records
+ownership, transactions and migration 0004_dataset_storage. Steps 5.3–5.7 remain
+Not started. Next implementation is 5.3 after 5.2 delivery.
 
 ## Initial design decisions
 
@@ -33,8 +35,8 @@ interfaces. Start with immutable UTF-8 CSV (optional BOM, comma delimiter), a
 nonfinite numbers. Step 5.1 now declares strict limits/metadata/tool inputs;
 actual upload parsing and value validation remain pending steps 5.3–5.4.
 
-Store bounded raw CSV in BYTEA; keep metadata and bounded result-artifact JSON
-separate. A storage interface permits a later Blob Storage adapter without
+Store bounded raw CSV in BYTEA; keep JSONB metadata and canonical JSON-text
+artifacts separate. A storage interface permits a later Blob Storage adapter without
 adding one now. Admin users still read only their own datasets. A preview is
 at most 20 rows; the model gets authorized metadata and bounded computed
 observations, not an automatic copy of CSV/preview data.
@@ -50,8 +52,9 @@ for insufficient or constant samples. No generated code or arbitrary SQL.
 Python 3.12 and the existing .venv/requirements.txt remain the workflow. Add
 pandas/NumPy/SciPy in their owning implementation steps after compatibility
 checks. No new database server, microservice, Redis, vectors or MCP dependency.
-Step 5.1 adds internal contracts/tests only. No parser, numerical executor,
-dependency, migration, configuration or API changes have been implemented.
+Steps 5.1–5.2 add contracts, repositories and an additive dataset migration.
+No parser, numerical executor, dependency, configuration or API changes have
+been implemented. Only disposable test schemas were migrated in this task.
 
 Plan 6 owns production tool policies. Plan 7 owns dataset/run/result HTTP APIs,
 durable execution and Kafka/outbox; plan 8 owns frontend integration. Existing

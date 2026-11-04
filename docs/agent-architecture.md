@@ -10,7 +10,7 @@ freeze an HTTP API, or replace the canonical parent-workspace implementation ord
 |---|---|---|
 | Access | Keycloak/OIDC, backend token storage/refresh, cookie sessions, local JWT validation, CSRF, owner-filter helper | Apply ownership to every business resource |
 | Agent | One CrewAI Agent per single-use controlled execution, Groq adapter, limits/retries, validated finalize_statistics | Persistent conversation context and clarification channel |
-| Data/tools | Typed interfaces, step 5.1 dataset/tool-input contracts (local), and a constant-data verification fixture | Dataset ingestion/storage and four real statistics tools |
+| Data/tools | Dataset/tool-input contracts, step 5.2 owned storage (local), and a constant-data verification fixture | CSV ingestion and four real statistics tools |
 | Execution | Internal in-process runner and event-sink interface | PostgreSQL jobs, leases, persistent results, transactional outbox and Kafka publisher |
 | Product | Health/auth/session APIs | Dataset/conversation/run/result APIs and frontend |
 
@@ -277,3 +277,8 @@ documentation change.
 Step 5.1 update — 3 November 2026: [dataset contracts](dataset-contracts.md) are
 complete locally; dataset/conversation/job/tool runtime remains planned. This
 contract step does not add needs_input, persistent memory or new API routes.
+
+Step 5.2 update — 4 November 2026: [owned persistence](dataset-storage.md) is
+complete locally with migration 0004_dataset_storage; required PR tests/delivery
+remain pending. This adds internal dataset/artifact repositories, not CSV
+parsing, conversation memory, jobs, statistics execution or business HTTP APIs.
