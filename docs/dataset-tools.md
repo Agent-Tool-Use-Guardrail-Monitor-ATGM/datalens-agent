@@ -1,6 +1,6 @@
 # Dataset storage and statistics tools — plan 5 handoff
 
-Updated: 4 November 2026. **5.1 delivered per user confirmation; 5.2 persistence complete locally, PR/tests delivery pending; 5.3–5.7 not started.**
+Updated: 4 November 2026. **5.1–5.2 delivered per user confirmation; 5.3 parser complete locally, PR/tests delivery pending; 5.4–5.7 not started.**
 Plan 4.6 delivery is accepted from the user's pull confirmation. The provider
 verification fixture is not a production dataset tool or upload API.
 
@@ -21,10 +21,12 @@ verification fixture is not a production dataset tool or upload API.
    runner with mocked inference, bounded summaries/artifacts and ownership proof.
 
 Step 5.1 delivery is accepted per user confirmation; see
-[contract semantics and verification](dataset-contracts.md). Step 5.2 is complete
-locally on feature/dataset-storage; [storage handoff](dataset-storage.md) records
-ownership, transactions and migration 0004_dataset_storage. Steps 5.3–5.7 remain
-Not started. Next implementation is 5.3 after 5.2 delivery.
+[contract semantics and verification](dataset-contracts.md). Step 5.2 delivery is
+accepted per user confirmation; [storage handoff](dataset-storage.md) records
+ownership, transactions and migration 0004_dataset_storage. Step 5.3 parser is
+complete locally on feature/csv-validation; [parser handoff](csv-validation.md)
+records exact syntax/type/limit semantics. Steps 5.4–5.7 remain Not started.
+Next implementation is 5.4 after 5.3 delivery.
 
 ## Initial design decisions
 
@@ -33,7 +35,8 @@ interfaces. Start with immutable UTF-8 CSV (optional BOM, comma delimiter), a
 5 MiB upload cap, 10,000 rows, 128 columns, 128 characters per column name and
 1,024 characters per cell. Reject malformed shape, duplicate headers and
 nonfinite numbers. Step 5.1 now declares strict limits/metadata/tool inputs;
-actual upload parsing and value validation remain pending steps 5.3–5.4.
+the separate step 5.3 parser now validates bytes/values, while actual ingestion
+composition remains pending step 5.4.
 
 Store bounded raw CSV in BYTEA; keep JSONB metadata and canonical JSON-text
 artifacts separate. A storage interface permits a later Blob Storage adapter without
@@ -52,9 +55,10 @@ for insufficient or constant samples. No generated code or arbitrary SQL.
 Python 3.12 and the existing .venv/requirements.txt remain the workflow. Add
 pandas/NumPy/SciPy in their owning implementation steps after compatibility
 checks. No new database server, microservice, Redis, vectors or MCP dependency.
-Steps 5.1–5.2 add contracts, repositories and an additive dataset migration.
-No parser, numerical executor, dependency, configuration or API changes have
-been implemented. Only disposable test schemas were migrated in this task.
+Steps 5.1–5.2 delivered contracts, repositories and an additive dataset migration.
+Step 5.3 adds a pure bounded CSV parser using the standard library. It is not yet
+connected to storage or an HTTP endpoint. No numerical executor, new dependency,
+configuration or API change is implemented. No database was used in step 5.3.
 
 Plan 6 owns production tool policies. Plan 7 owns dataset/run/result HTTP APIs,
 durable execution and Kafka/outbox; plan 8 owns frontend integration. Existing

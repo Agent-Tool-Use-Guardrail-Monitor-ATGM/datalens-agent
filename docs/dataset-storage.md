@@ -1,7 +1,6 @@
 # Owned dataset and artifact persistence — step 5.2
 
-Updated: 4 November 2026. **Complete locally on feature/dataset-storage;
-required PR tests/delivery pending.** Step 5.1 delivery is accepted from the
+Updated: 4 November 2026. **Step 5.2 delivered per user pull confirmation.** Historical implementation evidence below used feature/dataset-storage. Step 5.1 delivery is accepted from the
 user's pull confirmation. No CSV parser, statistical executor or business HTTP
 endpoint is added here. Only disposable PostgreSQL was migrated during testing.
 
@@ -131,3 +130,8 @@ authentication code, production settings or cloud resources changed. Browser/
 Keycloak cases and remote CI were not rerun locally; required PR tests remain the
 delivery gate. Parent canonical/planning files remain outside service Git/PRs.
 Stop before step 5.3 CSV parsing.
+
+Step 5.3 update: the [CSV parser](csv-validation.md) is now complete locally,
+but is not automatically called by DatasetStore. Step 5.4 must compose validated
+parsing and storage before ingestion is exposed. No storage/schema behavior
+changed in the parser step.

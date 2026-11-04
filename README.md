@@ -939,3 +939,20 @@ test project removed; Docker Desktop remains running. No existing auth logic,
 dependency, parser, numerical tool, API or cloud resources changed. Stop before
 5.3 CSV parsing. No commit/push/PR has been performed in this implementation
 turn. Parent canonical note/plans remain outside service Git/PRs.
+
+## Current implementation — bounded CSV validation 5.3
+
+Step 5.2 delivery accepted per user pull confirmation. Step 5.3 is complete
+locally on feature/csv-validation; required PR tests/delivery pending.
+[CSV parser](docs/csv-validation.md) validates UTF-8/BOM, strict quotes, rectangular
+records, actual column/row counts and configured size limits. It preserves raw
+bytes/nonmissing text, marks blanks as missing and infers numeric/text without
+silently coercing malformed text. NaN/infinity and overflowing numeric forms
+are rejected. Bounded previews are internal owner-authorized UI data.
+
+Added 65 tests; focused parser/contracts gate: 126 passed. Offline regression:
+484 passed, 115 database/browser tests deselected, 148 upstream warnings.
+Ruff/format/pip checks pass. Standard library only; no dataframe/new dependency,
+schema, database, auth/provider or API changes. Parsing is synchronous and pure;
+5.4 must offload and compose parse-before-storage. Stop before that step.
+No commit/push/PR performed. Parent plans remain outside this service Git/PR.
