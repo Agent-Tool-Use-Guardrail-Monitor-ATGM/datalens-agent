@@ -917,3 +917,25 @@ Stop before 5.2 owned persistence until this step is delivered and requested.
 Architecture/handoff files already uncommitted at step start are preserved on
 this branch; no claim they were previously published. Parent plans/canonical
 progress remain outside this service repository/PR.
+
+## Current implementation — owned storage 5.2
+
+Step 5.1 delivery is accepted per user pull confirmation. Step 5.2 is complete
+locally on feature/dataset-storage; required PR tests/delivery pending.
+[Storage handoff](docs/dataset-storage.md) documents owner-filtered repositories,
+metadata/raw-byte separation, bounded JSON artifacts, hash checks and cascading
+cleanup. Unknown/cross-owner reads share one fixed not-found failure; admin does
+not grant access to other users' data. File bytes/metadata commit atomically.
+
+Migration 0004_dataset_storage is additive and preserves existing auth rows.
+New readiness expects 0004; use the existing explicit upgrade/check lifecycle
+before running the new release against a persistent database. Only disposable
+PostgreSQL was migrated here. Test rollback drops the new dataset/artifact tables;
+it is not a production data-preserving undo operation.
+
+Verification: 517 passed with real PostgreSQL, 17 browser tests deselected,
+151 upstream warnings; Ruff format/checks and pip consistency pass. Disposable
+test project removed; Docker Desktop remains running. No existing auth logic,
+dependency, parser, numerical tool, API or cloud resources changed. Stop before
+5.3 CSV parsing. No commit/push/PR has been performed in this implementation
+turn. Parent canonical note/plans remain outside service Git/PRs.

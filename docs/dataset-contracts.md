@@ -1,7 +1,6 @@
 # Dataset and statistics-tool contracts — step 5.1
 
-Updated: 3 November 2026. **Complete locally on feature/dataset-contracts;
-required PR tests/delivery pending.** Only contracts and tests are implemented.
+Updated: 4 November 2026. **Step 5.1 delivered per user pull confirmation.** The following is its historical contract-only implementation record; subsequent storage work is documented in [step 5.2](dataset-storage.md).
 No CSV parser, database migration, numerical executor, dataset HTTP API,
 conversation control, provider request or cloud deployment was added.
 
@@ -113,3 +112,8 @@ The architecture/plan handoff docs were already uncommitted when this step began
 they are preserved on the feature branch, not claimed as previously merged.
 Parent canonical note and detailed plans live outside the service Git repository.
 Next implementation is 5.2 owned persistence after 5.1 delivery; stop here.
+
+Delivery update, 4 November 2026: 5.1 delivery is accepted from user confirmation;
+5.2 storage is now complete locally, with PR tests/delivery pending. Earlier
+pending/stop notes are historical. Current next implementation is 5.3 after
+5.2 delivery. No contract semantics were changed by the storage step.
