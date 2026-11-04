@@ -1,1 +1,1 @@
-"""Bounded dataset parsing; application/storage composition belongs to step 5.4."""
+"""Bounded parsing and the owner-scoped internal dataset lifecycle."""

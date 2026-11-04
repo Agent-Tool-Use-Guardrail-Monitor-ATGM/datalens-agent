@@ -135,3 +135,8 @@ Step 5.3 update: the [CSV parser](csv-validation.md) is now complete locally,
 but is not automatically called by DatasetStore. Step 5.4 must compose validated
 parsing and storage before ingestion is exposed. No storage/schema behavior
 changed in the parser step.
+
+Step 5.4 integration: the [internal lifecycle service](dataset-lifecycle.md)
+now composes parse-first ingestion and owned loading/preview/deletion over these
+repositories. DatasetStore remains a trusted low-level boundary and does not
+independently parse CSV. No schema change or new route was added in that step.

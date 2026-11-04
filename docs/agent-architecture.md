@@ -10,7 +10,7 @@ freeze an HTTP API, or replace the canonical parent-workspace implementation ord
 |---|---|---|
 | Access | Keycloak/OIDC, backend token storage/refresh, cookie sessions, local JWT validation, CSRF, owner-filter helper | Apply ownership to every business resource |
 | Agent | One CrewAI Agent per single-use controlled execution, Groq adapter, limits/retries, validated finalize_statistics | Persistent conversation context and clarification channel |
-| Data/tools | Delivered dataset contracts/storage, local step 5.3 CSV parser, and a constant-data verification fixture | Ingestion composition and four real statistics tools |
+| Data/tools | Dataset contracts/storage/CSV parser, local step 5.4 internal lifecycle service, and a constant-data verification fixture | Four real statistics tools |
 | Execution | Internal in-process runner and event-sink interface | PostgreSQL jobs, leases, persistent results, transactional outbox and Kafka publisher |
 | Product | Health/auth/session APIs | Dataset/conversation/run/result APIs and frontend |
 
@@ -287,3 +287,8 @@ Step 5.3 update — 4 November 2026: [pure CSV validation](csv-validation.md) is
 complete locally; PR tests/delivery pending. Metadata and bounded previews come
 from actual parsed data, but no storage integration, statistical execution,
 conversation/job memory or HTTP endpoint is introduced.
+
+Step 5.4 update — 4 November 2026: [internal dataset lifecycle](dataset-lifecycle.md)
+is complete locally. Parsing and storage are composed with bounded offload and
+ownership checks. No statistical tool, current app/lifespan wiring, run/job
+state or HTTP dataset endpoint is added; required PR tests/delivery remain pending.

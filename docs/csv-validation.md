@@ -1,7 +1,6 @@
 # Bounded CSV parsing and validation — step 5.3
 
-Updated: 4 November 2026. **Complete locally on feature/csv-validation;
-required PR tests/delivery pending.** Step 5.2 delivery is accepted from the
+Updated: 4 November 2026. **Step 5.3 included in locally cached origin/main.** Historical parser-only evidence below used feature/csv-validation. Step 5.2 delivery is accepted from the
 user's pull confirmation. No ingestion service or business HTTP route is added.
 
 ## Entry point and result
@@ -114,3 +113,8 @@ Plans/README/frontend handoff record these internal capabilities only. Parent
 planning files remain outside service Git/PRs. Stop before step 5.4 ingestion and
 dataset lifecycle composition. See [dataset/tools](dataset-tools.md) and the
 [architecture](agent-architecture.md) for subsequent responsibilities.
+
+Step 5.4 integration: [DatasetService](dataset-lifecycle.md) now offloads this
+pure parser, then calls storage after validation succeeds. The standalone parser
+still performs no writes; HTTP ingestion remains pending plan 7. Earlier
+pending/stop notes describe the 5.3 implementation record.
