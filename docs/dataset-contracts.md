@@ -84,7 +84,7 @@ needs_input remain plan 7, and are not introduced by this contract step.
 
 DatasetFailure permits dataset_not_found, invalid_csv, dataset_limit_exceeded,
 invalid_column, non_numeric_column, missing_values, insufficient_data,
-constant_input and result_limit_exceeded. Unknown and cross-owner resources must
+constant_input, result_limit_exceeded and (added in 5.5) numeric_range_exceeded. Unknown and cross-owner resources must
 later share dataset_not_found; the model does not implement that lookup itself.
 Transport/status mappings remain plan 7.
 
@@ -117,3 +117,7 @@ Delivery update, 4 November 2026: 5.1 delivery is accepted from user confirmatio
 5.2 storage is now complete locally, with PR tests/delivery pending. Earlier
 pending/stop notes are historical. Current next implementation is 5.3 after
 5.2 delivery. No contract semantics were changed by the storage step.
+
+Step 5.5 adds [typed finite statistical outputs](descriptive-tools.md) and the
+numeric_range_exceeded failure code. Existing dataset inputs/ownership contract
+semantics are unchanged; output contracts are still internal, not an HTTP API.
