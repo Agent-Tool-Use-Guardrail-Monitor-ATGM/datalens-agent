@@ -91,3 +91,26 @@ def test_parse_failure_releases_admission_for_next_request():
             assert (await parser.parse(b"x\n1", limits=DatasetLimits())).row_count == 1
 
     asyncio.run(exercise())
+
+
+def test_server_owned_computation_offloads_and_shares_parser_admission():
+    started, release = threading.Event(), threading.Event()
+
+    def controlled():
+        started.set()
+        assert release.wait(5)
+        return threading.get_ident()
+
+    async def exercise():
+        async with DatasetParser(workers=1) as parser:
+            task = asyncio.create_task(parser.compute(controlled))
+            try:
+                assert await asyncio.to_thread(started.wait, 3)
+                with pytest.raises(DatasetParserBusyError):
+                    await parser.parse(b"x\n4", limits=DatasetLimits())
+            finally:
+                release.set()
+            assert await task != threading.get_ident()
+            assert (await parser.parse(b"x\n4", limits=DatasetLimits())).row_count == 1
+
+    asyncio.run(exercise())

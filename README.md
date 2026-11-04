@@ -979,3 +979,23 @@ dependency, provider or cloud changes; schema stays 0004_dataset_storage. Only
 disposable test PostgreSQL used/removed, with Docker Desktop left running.
 No commit/push/PR performed. Stop before 5.5. Parent plans remain outside service
 Git/PRs; this README and lifecycle documentation are part of the service branch.
+
+## Current implementation — inspection/descriptive tools 5.5
+
+Step 5.4 delivery accepted per user confirmation. Complete locally on
+feature/descriptive-tools; required PR tests/delivery pending.
+[Real numerical tools](docs/descriptive-tools.md) provide inspect_dataset and
+describe_columns with strict bindings, owned loading, typed finite results and
+persisted artifacts tied to actual tool-call IDs/dataset checksums. NumPy 2.5.4
+is directly pinned; descriptions use float64, population ddof=0 and linear
+quartiles. Empty samples have unavailable metrics, not NaN. Arithmetic range
+errors return an explicit failure.
+
+Parsing and server-owned computation share bounded worker admission. Small
+observations contain the result; larger admitted results explicitly reference
+the full artifact. No silent truncation, budget increase, production policy,
+new live model request or API integration. Grouping/correlation remain 5.6.
+Added 34 tests. Focused gate: 41 passed. Full PostgreSQL/non-browser gate:
+638 passed, 17 browser tests deselected, 151 upstream warnings; Ruff/format/pip
+checks pass. No schema/auth/provider/cloud changes; only disposable test DB used
+and removed. No commit/push/PR performed; parent plans remain outside service Git.

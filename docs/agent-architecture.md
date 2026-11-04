@@ -10,7 +10,7 @@ freeze an HTTP API, or replace the canonical parent-workspace implementation ord
 |---|---|---|
 | Access | Keycloak/OIDC, backend token storage/refresh, cookie sessions, local JWT validation, CSRF, owner-filter helper | Apply ownership to every business resource |
 | Agent | One CrewAI Agent per single-use controlled execution, Groq adapter, limits/retries, validated finalize_statistics | Persistent conversation context and clarification channel |
-| Data/tools | Dataset contracts/storage/CSV parser, local step 5.4 internal lifecycle service, and a constant-data verification fixture | Four real statistics tools |
+| Data/tools | Dataset lifecycle and local inspect_dataset/describe_columns bindings/executor with typed artifacts | aggregate_statistics/correlate_columns and full agent composition |
 | Execution | Internal in-process runner and event-sink interface | PostgreSQL jobs, leases, persistent results, transactional outbox and Kafka publisher |
 | Product | Health/auth/session APIs | Dataset/conversation/run/result APIs and frontend |
 
@@ -292,3 +292,8 @@ Step 5.4 update — 4 November 2026: [internal dataset lifecycle](dataset-lifecy
 is complete locally. Parsing and storage are composed with bounded offload and
 ownership checks. No statistical tool, current app/lifespan wiring, run/job
 state or HTTP dataset endpoint is added; required PR tests/delivery remain pending.
+
+Step 5.5 update — 4 November 2026: [inspection/descriptive tools](descriptive-tools.md)
+are complete locally, using directly pinned NumPy 2.5.4 and shared bounded CPU
+admission. No policy/run API/live-model composition or event payload change;
+aggregation/correlation and plan 5.7 integration remain pending.

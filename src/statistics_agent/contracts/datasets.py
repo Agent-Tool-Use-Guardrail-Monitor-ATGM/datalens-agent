@@ -125,6 +125,7 @@ class DatasetFailure(Contract):
         "insufficient_data",
         "constant_input",
         "result_limit_exceeded",
+        "numeric_range_exceeded",
     ]
 
 

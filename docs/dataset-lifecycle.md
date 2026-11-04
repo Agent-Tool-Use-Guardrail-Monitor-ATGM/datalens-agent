@@ -1,7 +1,6 @@
 # Internal dataset lifecycle — step 5.4
 
-Updated: 4 November 2026. **Complete locally on feature/dataset-lifecycle;
-required PR tests/delivery pending.** The previous CSV-validation branch is
+Updated: 4 November 2026. **Step 5.4 delivered per user pull confirmation.** Historical evidence below used feature/dataset-lifecycle. The previous CSV-validation branch is
 included in locally cached origin/main; no fresh remote CI audit was performed.
 This is internal application code, not an upload API or an LLM-callable tool.
 
@@ -92,7 +91,7 @@ The bound is per shared pool, not a registry that prevents another instance from
 being constructed. Plan 7 must compose the shared dependency correctly. Future
 HTTP request reading/admission also needs explicit bounds; this method receives
 already materialized bytes. No env variable or HTTP busy-status mapping is added
-here. Numerical computation is still pending; this executor only parses CSV.
+here. Step 5.5 now extends this pool with server-owned compute(), sharing the same admission/cancellation guards; see the descriptive tool handoff.
 
 ## Verification and delivery
 
@@ -112,3 +111,7 @@ Service README and parent plans/canonical note/frontend tracker distinguish this
 internal capability from pending plan 7 HTTP integration. Parent planning files
 are outside service Git/PRs. Required GitHub tests remain the delivery gate; no
 commit/push/PR was performed. Stop before 5.5 real inspection/descriptive tools.
+
+Step 5.5 update: [real descriptive tools](descriptive-tools.md) now use compute()
+on the same shared pool as parsing. This service still owns loading/ownership;
+production policy and full runner/API composition remain later steps.

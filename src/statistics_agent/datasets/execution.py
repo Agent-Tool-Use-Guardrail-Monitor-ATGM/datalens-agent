@@ -1,8 +1,9 @@
-"""Bounded asynchronous admission for synchronous CSV parsing."""
+"""Bounded asynchronous admission for CSV parsing and server-owned computation."""
 
 import asyncio
 import contextvars
 import threading
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 
@@ -51,14 +52,20 @@ class DatasetParser:
             raise CsvValidationError("invalid_csv")
         if len(content) > bounds.max_upload_bytes:
             raise CsvValidationError("dataset_limit_exceeded")
+        return await self._run(partial(parse_csv, content, limits=bounds))
+
+    async def compute[T](self, operation: Callable[[], T]) -> T:
+        """Offload a server-owned numerical function, never model-provided code."""
+        return await self._run(operation)
+
+    async def _run[T](self, operation: Callable[[], T]) -> T:
         with self._lock:
             if self._closed:
                 raise DatasetParserClosedError
             if not self._slots.acquire(blocking=False):
                 raise DatasetParserBusyError
             try:
-                work = partial(parse_csv, content, limits=bounds)
-                future = self._executor.submit(contextvars.copy_context().run, work)
+                future = self._executor.submit(contextvars.copy_context().run, operation)
             except BaseException:
                 self._slots.release()
                 raise
