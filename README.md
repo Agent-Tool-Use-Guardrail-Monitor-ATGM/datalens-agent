@@ -999,3 +999,25 @@ Added 34 tests. Focused gate: 41 passed. Full PostgreSQL/non-browser gate:
 638 passed, 17 browser tests deselected, 151 upstream warnings; Ruff/format/pip
 checks pass. No schema/auth/provider/cloud changes; only disposable test DB used
 and removed. No commit/push/PR performed; parent plans remain outside service Git.
+
+## Current implementation — aggregation/correlation 5.6
+
+Step 5.5 delivery accepted per user confirmation. Complete locally on
+feature/aggregation-correlation; required PR tests/delivery pending.
+[Aggregation/correlation](docs/aggregation-correlation.md) complete the four
+numerical bindings: count/sum/mean/min/max with optional bounded grouping, and
+Pearson/Spearman coefficients on complete pairs of columns in one dataset.
+Group keys preserve exact text; missing/valid/dropped counts are explicit.
+Default/max 50 groups, no silent truncation. Constant or fewer-than-three-pair
+correlations are unavailable, not NaN. No p-values, hypotheses, joins or causality.
+
+SciPy 1.18.1 added for average Spearman ranks; NumPy remains 2.5.4. Owned loading,
+bounded shared compute, artifact/call provenance and size guards are reused.
+Full agent/tool registry/input-budget tests remain 5.7; production policy and
+HTTP APIs are later plans. No live model request or budget increase here.
+
+Added 45 tests. Focused gate: 58 passed. Full PostgreSQL/non-browser gate:
+683 passed, 17 browser tests deselected, 151 upstream warnings; Ruff/format/pip
+checks pass. No schema, auth/provider or cloud changes. Only disposable test
+PostgreSQL used/removed; Docker Desktop remains running. No commit/push/PR
+performed. Parent canonical note/plans remain outside this service Git/PR.

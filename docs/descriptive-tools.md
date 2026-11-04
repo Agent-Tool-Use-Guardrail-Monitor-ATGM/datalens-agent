@@ -1,7 +1,6 @@
 # Inspection and descriptive statistics — step 5.5
 
-Updated: 4 November 2026. **Complete locally on feature/descriptive-tools;
-required PR tests/delivery pending.** Step 5.4 delivery is accepted from the
+Updated: 4 November 2026. **Step 5.5 delivered per user pull confirmation.** Historical two-tool evidence below used feature/descriptive-tools. Step 5.4 delivery is accepted from the
 user's pull confirmation. Two real numerical tools are available internally;
 aggregation/correlation, production policy and public run APIs remain pending.
 
@@ -126,3 +125,7 @@ setting, API or cloud changes. Disposable test PostgreSQL removed after checks;
 Docker Desktop remains running. Required PR tests/delivery pending; no commit,
 push or PR performed. Parent plans remain outside service Git/PRs.
 Stop before 5.6 aggregation/correlation.
+
+Step 5.6 update — 5 November 2026: [aggregation/correlation](aggregation-correlation.md)
+now extend the executor to all four bindings. Existing descriptive semantics and
+artifact guards are preserved; full model/tool integration remains 5.7.

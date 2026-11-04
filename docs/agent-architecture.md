@@ -10,7 +10,7 @@ freeze an HTTP API, or replace the canonical parent-workspace implementation ord
 |---|---|---|
 | Access | Keycloak/OIDC, backend token storage/refresh, cookie sessions, local JWT validation, CSRF, owner-filter helper | Apply ownership to every business resource |
 | Agent | One CrewAI Agent per single-use controlled execution, Groq adapter, limits/retries, validated finalize_statistics | Persistent conversation context and clarification channel |
-| Data/tools | Dataset lifecycle and local inspect_dataset/describe_columns bindings/executor with typed artifacts | aggregate_statistics/correlate_columns and full agent composition |
+| Data/tools | Dataset lifecycle and all four owned numerical bindings/executor with typed artifacts | Full model/tool composition and production policy |
 | Execution | Internal in-process runner and event-sink interface | PostgreSQL jobs, leases, persistent results, transactional outbox and Kafka publisher |
 | Product | Health/auth/session APIs | Dataset/conversation/run/result APIs and frontend |
 
@@ -297,3 +297,8 @@ Step 5.5 update — 4 November 2026: [inspection/descriptive tools](descriptive-
 are complete locally, using directly pinned NumPy 2.5.4 and shared bounded CPU
 admission. No policy/run API/live-model composition or event payload change;
 aggregation/correlation and plan 5.7 integration remain pending.
+
+Step 5.6 update — 5 November 2026: [aggregation/correlation](aggregation-correlation.md)
+complete the four numerical bindings locally, with SciPy 1.18.1/NumPy 2.5.4.
+Full runner/model/input-budget integration, production policy and run APIs remain
+pending; no event payload, auth or cloud change.

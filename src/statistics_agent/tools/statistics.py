@@ -1,4 +1,4 @@
-"""Two numerical bindings/executor; caller still owns policy and event gates."""
+"""Four numerical bindings/executor; caller still owns policy and event gates."""
 
 import json
 from functools import partial
@@ -8,6 +8,8 @@ from pydantic import ValidationError
 from statistics_agent.agent.statistics import ToolBinding
 from statistics_agent.contracts.agent import AgentContext, ToolProposal, ToolResult
 from statistics_agent.contracts.datasets import (
+    AggregateStatisticsArguments,
+    CorrelateColumnsArguments,
     DescribeColumnsArguments,
     InspectDatasetArguments,
     StatisticsLimits,
@@ -20,6 +22,7 @@ from statistics_agent.datasets.execution import (
 )
 from statistics_agent.datasets.service import DatasetIntegrityError, DatasetService
 from statistics_agent.persistence.datasets import DatasetNotFoundError, DatasetStore, artifact_json
+from statistics_agent.tools.aggregation import aggregate_statistics, correlate_columns
 from statistics_agent.tools.descriptive import (
     StatisticsToolError,
     describe_columns,
@@ -36,6 +39,16 @@ STATISTICS_BINDINGS = (
         "describe_columns",
         "Compute numeric descriptions; choose omit or error for missing values.",
         DescribeColumnsArguments,
+    ),
+    ToolBinding(
+        "aggregate_statistics",
+        "Aggregate one owned value column, optionally by one group column.",
+        AggregateStatisticsArguments,
+    ),
+    ToolBinding(
+        "correlate_columns",
+        "Compute Pearson or Spearman on two columns of one dataset; no hypothesis test.",
+        CorrelateColumnsArguments,
     ),
 )
 MAX_SUMMARY_BYTES = 1024
@@ -81,11 +94,17 @@ class StatisticsTools:
             return _failed(proposal, "invalid_arguments")
         try:
             loaded = await self._datasets.load(context.principal, arguments.dataset_id)
-            operation = (
-                partial(inspect_dataset, loaded.parsed, arguments.dataset_id)
-                if proposal.name == "inspect_dataset"
-                else partial(describe_columns, loaded.parsed, arguments)
-            )
+            operations = {
+                "inspect_dataset": partial(inspect_dataset, loaded.parsed, arguments.dataset_id),
+                "describe_columns": partial(describe_columns, loaded.parsed, arguments),
+                "aggregate_statistics": partial(
+                    aggregate_statistics, loaded.parsed, arguments, self._limits
+                ),
+                "correlate_columns": partial(
+                    correlate_columns, loaded.parsed, arguments, self._limits
+                ),
+            }
+            operation = operations[proposal.name]
             result = await self._worker.compute(operation)
             payload = {
                 "schema_version": "statistics-result-v1",
@@ -98,19 +117,21 @@ class StatisticsTools:
                 encoded, raw = artifact_json(payload, self._limits.max_result_bytes)
             except ValueError:
                 return _failed(proposal, "result_limit_exceeded")
-            summary = (
-                encoded
-                if len(raw) <= MAX_SUMMARY_BYTES
-                else json.dumps(
-                    {
-                        "tool": proposal.name,
-                        "dataset_id": str(arguments.dataset_id),
-                        "column_count": len(result.columns),
-                        "details_in_artifact": True,
-                    },
-                    separators=(",", ":"),
-                )
-            )
+            if len(raw) <= MAX_SUMMARY_BYTES:
+                summary = encoded
+            else:
+                notice = {
+                    "tool": proposal.name,
+                    "dataset_id": str(arguments.dataset_id),
+                    "details_in_artifact": True,
+                }
+                if proposal.name in {"inspect_dataset", "describe_columns"}:
+                    notice["column_count"] = len(result.columns)
+                elif proposal.name == "aggregate_statistics":
+                    notice["group_count"] = len(result.groups)
+                else:
+                    notice["sample_size"] = result.sample_size
+                summary = json.dumps(notice, separators=(",", ":"))
             artifact = await self._artifacts.create_artifact(
                 context.principal, arguments.dataset_id, payload
             )

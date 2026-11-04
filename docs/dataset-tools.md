@@ -1,6 +1,6 @@
 # Dataset storage and statistics tools — plan 5 handoff
 
-Updated: 4 November 2026. **5.1–5.4 available per prior checks/user pull confirmation; 5.5 inspection/descriptions complete locally, PR/tests delivery pending; 5.6–5.7 not started.**
+Updated: 5 November 2026. **5.1–5.5 available per prior checks/user pull confirmation; 5.6 aggregation/correlation complete locally, PR/tests delivery pending; 5.7 not started.**
 Plan 4.6 delivery is accepted from the user's pull confirmation. The provider
 verification fixture is not a production dataset tool or upload API.
 
@@ -27,9 +27,11 @@ ownership, transactions and migration 0004_dataset_storage. Step 5.3 parser is
 included in locally cached origin/main; [parser handoff](csv-validation.md)
 records syntax/type/limit semantics. Step 5.4 delivery is accepted per user pull
 confirmation; [lifecycle handoff](dataset-lifecycle.md) documents owned ingestion.
-Step 5.5 is complete locally on feature/descriptive-tools; [tool handoff](descriptive-tools.md)
-documents the two real numerical bindings/executor and result semantics.
-Steps 5.6–5.7 remain Not started. Next implementation is 5.6 after 5.5 delivery.
+Step 5.5 delivery is accepted per user pull confirmation; [descriptive handoff](descriptive-tools.md)
+records those semantics. Step 5.6 is complete locally on feature/aggregation-correlation;
+[aggregation/correlation handoff](aggregation-correlation.md) documents the other
+two bindings and typed results. Step 5.7 remains Not started. Next implementation
+is full agent integration after 5.6 delivery.
 
 ## Initial design decisions
 
@@ -61,9 +63,9 @@ checks. No new database server, microservice, Redis, vectors or MCP dependency.
 Steps 5.1–5.2 delivered contracts, repositories and an additive dataset migration.
 Step 5.3 adds a pure bounded CSV parser using the standard library. Step 5.4 now
 connects parsing and storage through an internal service with bounded offload;
-no HTTP endpoint or current app/lifespan wiring is added. Step 5.5 adds two
-numerical tools/executor using directly pinned NumPy 2.5.4. Aggregation/correlation
-remain pending; there is no configuration or API change. Only disposable
+no HTTP endpoint or current app/lifespan wiring is added. Steps 5.5–5.6 supply
+all four numerical tools/executor with NumPy 2.5.4 and SciPy 1.18.1. Full agent
+composition remains 5.7; there is no configuration or API change. Only disposable
 PostgreSQL was used; schema remains 0004_dataset_storage.
 
 Plan 6 owns production tool policies. Plan 7 owns dataset/run/result HTTP APIs,
