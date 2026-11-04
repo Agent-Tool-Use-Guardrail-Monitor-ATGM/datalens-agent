@@ -866,3 +866,54 @@ Includes the entire browser-login module plus native finalization, model adapter
 provider verification and real PostgreSQL/JWT/CSRF handoff tests. No auth code
 or browser test was changed to obtain this result. Both disposable Docker test
 projects were removed after verification; Docker Desktop remains running.
+
+
+## Current planning step — dataset storage and statistics tools
+
+Plan 4.6 delivery is accepted from the user's pull confirmation. Prior pending
+CI/hold entries above describe historical checks. [Plan 5 handoff](docs/dataset-tools.md)
+now defines seven ordered steps, all Not started. Begin with 5.1 contracts when
+requested; then persistence, CSV validation, dataset lifecycle, inspection/
+description, aggregation/correlation and integration. HTTP APIs remain plan 7.
+This documentation branch changes no runtime, dependencies or database schema.
+The detailed parent plan/canonical note are outside this repository and PR.
+
+## Confirmed conversation architecture — design only
+
+[Architecture](docs/agent-architecture.md) records current versus planned behavior,
+service/node diagrams, four numerical tools and separate control functions,
+clarification/partial-result fallbacks, PostgreSQL jobs and Kafka telemetry.
+Multiple datasets are analyzed separately within a stored conversation; no joins.
+Only bounded context reaches the model, and only one run per conversation is
+active. These capabilities are not implemented by this documentation change.
+
+The parent plans 5–7 and frontend handoff are aligned. Plan 7 will extend the
+existing single-run runner compatibly; needs_input and persistent follow-up
+context are not available yet. Next implementation remains dataset contracts
+5.1, when requested. No dependency, source, migration or deployment changes here.
+The service PR includes this architecture/README/handoff; parent planning files
+remain outside this repository and must be shared separately.
+
+Documentation verification: 27 local link targets and balanced code fences in
+10 architecture/plan files checked; service Git whitespace check passes. No
+runtime, dependency, migration or environment changes; runtime tests not rerun.
+Required PR tests still apply before merging the service documentation branch.
+
+## Current implementation — dataset contracts 5.1
+
+Complete locally on feature/dataset-contracts; required PR tests/delivery pending.
+[Dataset contracts](docs/dataset-contracts.md) now define bounded metadata,
+rectangular string/null previews, fixed failures and strict arguments for the
+four numerical tools. Missing-value strategy is explicit; numerical calls target
+one dataset and reject code/SQL/joins or client-supplied ownership. Contract
+validation does not establish authorization or enforce limits on real CSV files.
+
+Added 61 tests. Final offline suite: 409 passed, 102 database/browser tests
+explicitly deselected, 148 upstream warnings. Ruff formatting/checks and pip
+consistency pass. No dependency, migration, parser, executor, API route or live
+provider changes. Existing DatasetSummary/runner behavior remains unchanged.
+Stop before 5.2 owned persistence until this step is delivered and requested.
+
+Architecture/handoff files already uncommitted at step start are preserved on
+this branch; no claim they were previously published. Parent plans/canonical
+progress remain outside this service repository/PR.
