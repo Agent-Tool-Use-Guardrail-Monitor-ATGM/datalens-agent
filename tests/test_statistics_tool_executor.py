@@ -59,7 +59,12 @@ def test_real_tools_persist_typed_results_with_exact_call_and_dataset_provenance
                 assert payload["result"]["row_count"] == 3
             assert str(principal.auth_session_ref) not in json.dumps(payload)
             assert principal.issuer not in json.dumps(payload)
-            assert len(tools.bindings) == 2
+            assert {binding.name for binding in tools.bindings} == {
+                "inspect_dataset",
+                "describe_columns",
+                "aggregate_statistics",
+                "correlate_columns",
+            }
             assert all(
                 b.schema()["function"]["parameters"]["additionalProperties"] is False
                 for b in tools.bindings

@@ -121,3 +121,7 @@ pending/stop notes are historical. Current next implementation is 5.3 after
 Step 5.5 adds [typed finite statistical outputs](descriptive-tools.md) and the
 numeric_range_exceeded failure code. Existing dataset inputs/ownership contract
 semantics are unchanged; output contracts are still internal, not an HTTP API.
+
+Step 5.6 adds group_limit_exceeded and [typed aggregate/correlation outputs](aggregation-correlation.md).
+Existing dataset/tool argument shapes remain unchanged. Counts, finite coefficients
+and unavailable-result invariants are internal contracts, not new HTTP schemas.
