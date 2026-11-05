@@ -77,13 +77,14 @@ Exceeding the bound returns failed/result_limit_exceeded before creating a succe
 artifact; no silent column truncation. Configure executor/store limits consistently
 when composing them. Some valid very wide datasets can exceed result bounds.
 
-Observations are at most **1,024 UTF-8 bytes**. Small payloads are included in full.
+Observations are at most **1,024 UTF-8 bytes**. Small summaries include computed values while omitting duplicated selectors and
+implementation metadata; the complete typed payload remains in the artifact.
 Larger admitted results produce an explicit details_in_artifact notice with tool,
 dataset ID and column count; the complete numbers remain in the owned artifact.
 That notice does not mean the model saw the full table. It must not invent numbers
 from it. Future UI/results APIs must present authoritative typed artifacts, and
-plan 5.7 must verify entire tool-schema/history overhead under existing model
-input limits. No budget was increased here.
+[plan 5.7 integration](agent-tool-integration.md) verifies complete schema/history
+overhead on bounded fixtures and explicit budget-stop cases. No budget was increased.
 
 Known validation/data errors return fixed failed summaries without raw arguments
 or data. Unknown names, including control names, return unknown_tool. Invalid

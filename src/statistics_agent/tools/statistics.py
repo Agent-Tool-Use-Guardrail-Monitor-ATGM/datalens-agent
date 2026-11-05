@@ -32,22 +32,22 @@ from statistics_agent.tools.descriptive import (
 STATISTICS_BINDINGS = (
     ToolBinding(
         "inspect_dataset",
-        "Inspect owned dataset dimensions, column types and missing counts.",
+        "Inspect dimensions, types and missing counts.",
         InspectDatasetArguments,
     ),
     ToolBinding(
         "describe_columns",
-        "Compute numeric descriptions; choose omit or error for missing values.",
+        "Describe numeric columns; explicit missing policy.",
         DescribeColumnsArguments,
     ),
     ToolBinding(
         "aggregate_statistics",
-        "Aggregate one owned value column, optionally by one group column.",
+        "Aggregate a column; optional grouping.",
         AggregateStatisticsArguments,
     ),
     ToolBinding(
         "correlate_columns",
-        "Compute Pearson or Spearman on two columns of one dataset; no hypothesis test.",
+        "Correlate two columns; no hypothesis test.",
         CorrelateColumnsArguments,
     ),
 )
@@ -114,11 +114,37 @@ class StatisticsTools:
                 "result": result.model_dump(mode="json"),
             }
             try:
-                encoded, raw = artifact_json(payload, self._limits.max_result_bytes)
+                artifact_json(payload, self._limits.max_result_bytes)
             except ValueError:
                 return _failed(proposal, "result_limit_exceeded")
-            if len(raw) <= MAX_SUMMARY_BYTES:
-                summary = encoded
+            # Provenance and implementation metadata remain in the complete artifact.
+            # Keep every numerical value, missing count and availability reason.
+            summary_result = {
+                key: value
+                for key, value in payload["result"].items()
+                if key
+                not in {
+                    "dataset_id",
+                    "backend",
+                    "backend_version",
+                    "numpy_version",
+                    "scipy_version",
+                    "dtype",
+                    "column",
+                    "operation",
+                    "group_by",
+                    "x_column",
+                    "y_column",
+                }
+            }
+            candidate = json.dumps(
+                {"result": summary_result},
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+            )
+            if len(candidate.encode("utf-8")) <= MAX_SUMMARY_BYTES:
+                summary = candidate
             else:
                 notice = {
                     "tool": proposal.name,

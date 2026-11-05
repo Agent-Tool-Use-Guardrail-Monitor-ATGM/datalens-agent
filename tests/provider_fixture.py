@@ -16,7 +16,7 @@ class ProviderFixture:
         observations = [m for m in data["messages"] if m["role"] == "tool"]
         if observations:
             value = json.loads(observations[-1]["content"])
-            assert json.loads(value["summary"]) == {"mean": 4.0, "count": 3}
+            assert value["summary"] == {"mean": 4.0, "count": 3}
             message = {
                 "content": None,
                 "tool_calls": [

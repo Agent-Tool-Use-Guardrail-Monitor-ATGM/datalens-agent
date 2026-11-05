@@ -37,7 +37,7 @@ DatasetSummary must be supplied after owner checks; it is not itself an ownershi
 proof. At most 16 datasets and 128 columns each are accepted. Backend tools will
 load authorized data using those references in plan 5.
 
-PROMPT is version `statistics-v1`; response schema is `statistics-answer-v1`.
+The current PROMPT is version `statistics-v3`; response schema is `statistics-answer-v1`.
 It instructs the model to treat supplied content as untrusted data, use only the
 declared tools and never invent measurements. Model messages contain instructions,
 question, dataset metadata and bounded tool observations. Issuer/subject, auth
@@ -111,7 +111,7 @@ owned datasets, durable runs/outbox and HTTP APIs. Stop before 4.5.
 
 ## Provider continuation correction — step 4.6
 
-The current prompt is statistics-v2. The runner declares a reserved
+The step 4.6 prompt was statistics-v2; step 5.7 uses statistics-v3. The runner declares a reserved
 `finalize_statistics` function with the existing StatisticsAnswer schema. This
 is an output-validation channel, not a numerical executor: it rechecks access,
 validates the answer and permits only successful computation IDs as references.
@@ -123,7 +123,8 @@ completed or failed tool events; consumers must distinguish it by tool name.
 The advertised reference enum is constrained to successful results already seen
 in this run; local provenance validation remains authoritative. Further numeric
 calculations remain allowed, subject to unchanged history/input limits. The
-three-round regression fixture reaches the existing conservative 4096-unit
-request cap after two computations and correctly returns incomplete.
+three-round regression fixture now fits after step 5.7 request compaction.
+The 4096-unit cap still rejects oversized initial/accumulated requests; verified
+artifacts survive a later stop. See [full tool integration](agent-tool-integration.md).
 See [provider verification](provider-verification.md) for current evidence; the
 preceding step 4.4 counts and prompt version describe historical evidence.
