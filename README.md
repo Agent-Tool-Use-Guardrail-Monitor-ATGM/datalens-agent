@@ -1,13 +1,20 @@
 # DataLens statistics-agent development
 
-Latest step: [6.4 controlled runner integration](docs/controlled-runner-integration.md),
-complete locally on `feature/controlled-runner-integration`; required PR tests/
-delivery pending. Step 6.3 delivery is accepted from the user's pull confirmation.
+Latest step: [7.1 conversation/run/control/event contracts](docs/conversation-run-contracts.md),
+complete locally on `feature/conversation-run-contracts`; required PR tests/delivery
+pending. Plan 6 delivery is accepted from the user's pull confirmation. New strict
+values cover lifecycle/outcome, clarification, provenance, pagination and opt-in
+typed event v2 payloads. Existing runner/answers/producers/routes are unchanged.
+Verification: 897 passed, 17 browser tests deselected; final payload recheck: 14
+passed. Ruff/format/pip/whitespace checks pass. Next after delivery: only 7.2.
+
+Previous step: [6.4 controlled runner integration](docs/controlled-runner-integration.md),
+delivered per user pull confirmation. Step 6.3 is also delivered.
 The internal factory composes real owned policy, admitted limits and four numerical
 tools. Numerical outcomes include redacted policy-version/verdict evidence;
 finalization retains separate access/result checks. Native CrewAI execution stays
 disabled. Verification: 847 passed, 17 browser tests deselected; Ruff/format/pip/
-whitespace checks pass. Plan 7 starts only after delivery and user instruction.
+whitespace checks passed for that step. Plan 7.1 status is recorded above.
 
 [Plan 3 integration evidence and frontend/agent handoff](docs/access-handoff.md)
 records the verified access contract and recovery/test procedures.

@@ -1,0 +1,172 @@
+[
+  {
+    "schema_version": "1.0",
+    "event_id": "00000000-0000-0000-0000-000000000065",
+    "event_type": "session.started",
+    "occurred_at": "2026-11-05T00:00:00Z",
+    "run_id": "00000000-0000-0000-0000-000000000002",
+    "session_id": "00000000-0000-0000-0000-000000000001",
+    "sequence": 1,
+    "request_id": "00000000-0000-0000-0000-000000000007",
+    "data": {
+      "payload_version": "agent-run-events-v2",
+      "versions": {
+        "provider": {
+          "config_id": "00000000-0000-0000-0000-00000000000a",
+          "version": "example-v1"
+        },
+        "prompt": {
+          "config_id": "00000000-0000-0000-0000-00000000000a",
+          "version": "example-v1"
+        },
+        "toolset": {
+          "config_id": "00000000-0000-0000-0000-00000000000a",
+          "version": "example-v1"
+        },
+        "policy": {
+          "config_id": "00000000-0000-0000-0000-00000000000a",
+          "version": "example-v1"
+        }
+      },
+      "dataset_count": 2,
+      "conversation_id": "00000000-0000-0000-0000-000000000008"
+    }
+  },
+  {
+    "schema_version": "1.0",
+    "event_id": "00000000-0000-0000-0000-000000000066",
+    "event_type": "tool_call.requested",
+    "occurred_at": "2026-11-05T00:00:00Z",
+    "run_id": "00000000-0000-0000-0000-000000000002",
+    "session_id": "00000000-0000-0000-0000-000000000001",
+    "sequence": 2,
+    "request_id": "00000000-0000-0000-0000-000000000007",
+    "data": {
+      "payload_version": "agent-run-events-v2",
+      "tool_call_id": "00000000-0000-0000-0000-000000000003",
+      "kind": "numerical",
+      "name": "aggregate_statistics",
+      "arguments_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "features": {
+        "argument_shape": "valid",
+        "dataset_selection": "selected",
+        "column_count": 1,
+        "operation": "mean",
+        "missing_policy": "omit"
+      }
+    }
+  },
+  {
+    "schema_version": "1.0",
+    "event_id": "00000000-0000-0000-0000-000000000067",
+    "event_type": "tool_call.completed",
+    "occurred_at": "2026-11-05T00:00:00Z",
+    "run_id": "00000000-0000-0000-0000-000000000002",
+    "session_id": "00000000-0000-0000-0000-000000000001",
+    "sequence": 3,
+    "request_id": "00000000-0000-0000-0000-000000000007",
+    "data": {
+      "payload_version": "agent-run-events-v2",
+      "tool_call_id": "00000000-0000-0000-0000-000000000003",
+      "status": "completed",
+      "policy_evaluation": {
+        "tool_call_id": "00000000-0000-0000-0000-000000000003",
+        "status": "allowed",
+        "policy": {
+          "config_id": "00000000-0000-0000-0000-00000000000a",
+          "version": "example-v1"
+        },
+        "decision": {
+          "tool_call_id": "00000000-0000-0000-0000-000000000003",
+          "allowed": true,
+          "reason": "allowed"
+        }
+      },
+      "latency_ms": 12
+    }
+  },
+  {
+    "schema_version": "1.0",
+    "event_id": "00000000-0000-0000-0000-000000000068",
+    "event_type": "tool_call.failed",
+    "occurred_at": "2026-11-05T00:00:00Z",
+    "run_id": "00000000-0000-0000-0000-000000000002",
+    "session_id": "00000000-0000-0000-0000-000000000001",
+    "sequence": 4,
+    "request_id": "00000000-0000-0000-0000-000000000007",
+    "data": {
+      "payload_version": "agent-run-events-v2",
+      "tool_call_id": "00000000-0000-0000-0000-000000000004",
+      "status": "rejected",
+      "policy_evaluation": {
+        "tool_call_id": "00000000-0000-0000-0000-000000000004",
+        "status": "denied",
+        "policy": {
+          "config_id": "00000000-0000-0000-0000-00000000000a",
+          "version": "example-v1"
+        },
+        "decision": {
+          "tool_call_id": "00000000-0000-0000-0000-000000000004",
+          "allowed": false,
+          "reason": "denied"
+        }
+      },
+      "reason": "policy_denied"
+    }
+  },
+  {
+    "schema_version": "1.0",
+    "event_id": "00000000-0000-0000-0000-000000000069",
+    "event_type": "model_call.completed",
+    "occurred_at": "2026-11-05T00:00:00Z",
+    "run_id": "00000000-0000-0000-0000-000000000002",
+    "session_id": "00000000-0000-0000-0000-000000000001",
+    "sequence": 5,
+    "request_id": "00000000-0000-0000-0000-000000000007",
+    "data": {
+      "payload_version": "agent-run-events-v2",
+      "model_call_id": "00000000-0000-0000-0000-000000000005",
+      "attempt_index": 1,
+      "latency_ms": 100,
+      "usage": {
+        "source": "provider",
+        "input_tokens": 40,
+        "output_tokens": 10
+      }
+    }
+  },
+  {
+    "schema_version": "1.0",
+    "event_id": "00000000-0000-0000-0000-00000000006a",
+    "event_type": "model_call.failed",
+    "occurred_at": "2026-11-05T00:00:00Z",
+    "run_id": "00000000-0000-0000-0000-000000000002",
+    "session_id": "00000000-0000-0000-0000-000000000001",
+    "sequence": 6,
+    "request_id": "00000000-0000-0000-0000-000000000007",
+    "data": {
+      "payload_version": "agent-run-events-v2",
+      "model_call_id": "00000000-0000-0000-0000-000000000006",
+      "attempt_index": 1,
+      "latency_ms": 200,
+      "category": "timeout",
+      "outcome_unknown": true
+    }
+  },
+  {
+    "schema_version": "1.0",
+    "event_id": "00000000-0000-0000-0000-00000000006b",
+    "event_type": "session.ended",
+    "occurred_at": "2026-11-05T00:00:00Z",
+    "run_id": "00000000-0000-0000-0000-000000000002",
+    "session_id": "00000000-0000-0000-0000-000000000001",
+    "sequence": 7,
+    "request_id": "00000000-0000-0000-0000-000000000007",
+    "data": {
+      "payload_version": "agent-run-events-v2",
+      "lifecycle": "finished",
+      "outcome": "incomplete",
+      "verified_result_count": 1
+    }
+  }
+]
