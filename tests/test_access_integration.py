@@ -23,20 +23,19 @@ from access_harness import (
 from statistics_agent.persistence.database import Database
 from statistics_agent.persistence.migrate import execute
 from statistics_agent.persistence.models import BrowserSession, LoginAttempt
-from test_auth_storage import run
-from test_auth_storage import settings as settings
+from support.database import run
 
 pytestmark = [pytest.mark.browser, pytest.mark.postgres]
 
 
 @pytest.fixture
-def process_api(settings, tmp_path, request):
+def process_api(auth_storage_settings, tmp_path, request):
     if os.environ.get("AUTH_BROWSER_TESTS") != "1":
         if os.environ.get("CI"):
             pytest.fail("CI must enable real access integration")
         pytest.skip("Enable AUTH_BROWSER_TESTS with the disposable identity fixture")
-    run(execute(settings, "upgrade"))
-    api = ApiProcess(settings, tmp_path, issuer=getattr(request, "param", ISSUER))
+    run(execute(auth_storage_settings, "upgrade"))
+    api = ApiProcess(auth_storage_settings, tmp_path, issuer=getattr(request, "param", ISSUER))
     try:
         api.start()
         yield api
@@ -44,7 +43,7 @@ def process_api(settings, tmp_path, request):
         api.stop()
 
         async def cleanup():
-            database = Database(settings)
+            database = Database(auth_storage_settings)
             try:
                 async with database.session() as session:
                     for model in (BrowserSession, LoginAttempt):

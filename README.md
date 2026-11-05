@@ -1053,3 +1053,26 @@ No commit or push performed. Required PR checks/delivery remain pending.
 Next: deliver this step through a PR with required `tests`; then implement only
 6.1 policy configuration when requested. Parent canonical note/plans/frontend
 handoff remain outside this service Git repository and PR.
+
+## Current maintenance — module boundary refactor
+
+Complete locally on `refactor/module-boundaries`; required PR tests/delivery
+pending. [Module ownership and verification](docs/module-boundaries.md) records
+lightweight tool/prompt/error definitions, shared agent/session contracts,
+separate runner execution/finalization phases and reusable test support.
+Numerical tools no longer import the CrewAI-backed runner; OIDC no longer imports
+PostgreSQL persistence merely to share credential records. Old import identities
+remain compatible. Tests register shared database fixtures in `conftest.py` and
+inject provider responses through existing transport construction.
+
+Final gate: **731 passed, no skips**, including all 17 real browser/auth tests;
+214 upstream warnings. Ruff checks/formatting for `src` and `tests`, pip consistency
+and refactor whitespace checks pass. New import tests verify that shared modules
+do not initialize CrewAI or alter framework environment flags. No schema,
+dependency, public API, prompt-version, permission or numerical-behavior change.
+Disposable fixtures removed; development data untouched. No commit/push performed.
+The baseline outage-login browser case failed once and passed in isolation; the
+final full suite passed without retries. Keep this observation when assessing CI.
+
+This maintenance task does not implement plan 6.1 or security follow-up 3.7.
+Parent planning updates remain outside the service repository and its PR.

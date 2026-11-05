@@ -6,35 +6,21 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select
 
-from statistics_agent.contracts.agent import AgentContext, ToolProposal
 from statistics_agent.contracts.datasets import StatisticsLimits
 from statistics_agent.persistence.models import DatasetArtifact
 from statistics_agent.tools.statistics import MAX_SUMMARY_BYTES, StatisticsTools
-from test_dataset_service import application
-from test_dataset_storage import CONTENT, owner
-from test_migrations import run
-from test_migrations import settings as settings
+from support.database import run
+from support.datasets import CONTENT, application, context, owner, proposal
 
 pytestmark = pytest.mark.postgres
 
 
-def context(principal):
-    return AgentContext(principal=principal, run_id=uuid4(), session_id=uuid4(), request_id=uuid4())
-
-
-def proposal(name, dataset_id, **arguments):
-    return ToolProposal(
-        tool_call_id=uuid4(),
-        provider_tool_call_id="fixture-tool-1",
-        name=name,
-        raw_arguments=json.dumps({"dataset_id": str(dataset_id)} | arguments),
-    )
-
-
 @pytest.mark.parametrize("name", ["inspect_dataset", "describe_columns"])
-def test_real_tools_persist_typed_results_with_exact_call_and_dataset_provenance(settings, name):
+def test_real_tools_persist_typed_results_with_exact_call_and_dataset_provenance(
+    migration_settings, name
+):
     async def exercise():
-        async with application(settings) as (_, store, worker, datasets):
+        async with application(migration_settings) as (_, store, worker, datasets):
             principal = owner()
             metadata = await datasets.ingest(principal, filename="private.csv", content=CONTENT)
             tools = StatisticsTools(datasets, worker=worker, artifacts=store)
@@ -84,10 +70,10 @@ def test_real_tools_persist_typed_results_with_exact_call_and_dataset_provenance
     ],
 )
 def test_invalid_or_unrepresentable_work_never_creates_a_success_artifact(
-    settings, raw, columns, policy, code
+    migration_settings, raw, columns, policy, code
 ):
     async def exercise():
-        async with application(settings) as (database, store, worker, datasets):
+        async with application(migration_settings) as (database, store, worker, datasets):
             principal = owner()
             value = await datasets.ingest(principal, filename="data.csv", content=raw)
             request = proposal(
@@ -107,9 +93,11 @@ def test_invalid_or_unrepresentable_work_never_creates_a_success_artifact(
 @pytest.mark.parametrize(
     "identity", [{"subject": "other"}, {"subject": "admin", "roles": ["user", "admin"]}]
 )
-def test_tool_executor_cannot_compute_or_persist_other_owners_data(settings, monkeypatch, identity):
+def test_tool_executor_cannot_compute_or_persist_other_owners_data(
+    migration_settings, monkeypatch, identity
+):
     async def exercise():
-        async with application(settings) as (_, store, worker, datasets):
+        async with application(migration_settings) as (_, store, worker, datasets):
             principal = owner()
             value = await datasets.ingest(principal, filename="data.csv", content=CONTENT)
 
@@ -127,9 +115,9 @@ def test_tool_executor_cannot_compute_or_persist_other_owners_data(settings, mon
     run(exercise())
 
 
-def test_empty_sample_has_persisted_explicit_unavailable_metrics(settings):
+def test_empty_sample_has_persisted_explicit_unavailable_metrics(migration_settings):
     async def exercise():
-        async with application(settings) as (_, store, worker, datasets):
+        async with application(migration_settings) as (_, store, worker, datasets):
             principal = owner()
             value = await datasets.ingest(principal, filename="empty.csv", content=b"price")
             result = await StatisticsTools(datasets, worker=worker, artifacts=store).execute(
@@ -147,9 +135,11 @@ def test_empty_sample_has_persisted_explicit_unavailable_metrics(settings):
     run(exercise())
 
 
-def test_large_results_use_explicit_artifact_observation_and_oversize_is_rejected(settings):
+def test_large_results_use_explicit_artifact_observation_and_oversize_is_rejected(
+    migration_settings,
+):
     async def exercise():
-        async with application(settings) as (database, store, worker, datasets):
+        async with application(migration_settings) as (database, store, worker, datasets):
             principal = owner()
             names = [f"c{i}" for i in range(12)]
             raw = (",".join(names) + "\n" + ",".join(["2"] * 12)).encode()
@@ -181,9 +171,9 @@ def test_large_results_use_explicit_artifact_observation_and_oversize_is_rejecte
     run(exercise())
 
 
-def test_unknown_control_name_is_not_executed_as_a_numerical_tool(settings):
+def test_unknown_control_name_is_not_executed_as_a_numerical_tool(migration_settings):
     async def exercise():
-        async with application(settings) as (_, store, worker, datasets):
+        async with application(migration_settings) as (_, store, worker, datasets):
             result = await StatisticsTools(datasets, worker=worker, artifacts=store).execute(
                 context(owner()), proposal("finalize_statistics", uuid4())
             )
@@ -194,9 +184,11 @@ def test_unknown_control_name_is_not_executed_as_a_numerical_tool(settings):
     run(exercise())
 
 
-def test_deleted_dataset_after_computation_cannot_publish_a_success_artifact(settings, monkeypatch):
+def test_deleted_dataset_after_computation_cannot_publish_a_success_artifact(
+    migration_settings, monkeypatch
+):
     async def exercise():
-        async with application(settings) as (_, store, worker, datasets):
+        async with application(migration_settings) as (_, store, worker, datasets):
             principal = owner()
             value = await datasets.ingest(principal, filename="data.csv", content=CONTENT)
             original = worker.compute

@@ -9,20 +9,18 @@ import httpx
 import pytest
 from sqlalchemy import func, select
 
+from statistics_agent.agent.prompts import FINALIZE
 from statistics_agent.agent.provider import ModelAdapter
-from statistics_agent.agent.statistics import FINALIZE, DatasetSummary, StatisticsSession
-from statistics_agent.contracts.agent import ToolDecision
+from statistics_agent.agent.statistics import StatisticsSession
+from statistics_agent.contracts.agent import DatasetSummary, ToolDecision
 from statistics_agent.contracts.common import ConfigurationReference
 from statistics_agent.contracts.datasets import StatisticsLimits
 from statistics_agent.core.model_settings import ModelSettings
 from statistics_agent.persistence.models import DatasetArtifact
 from statistics_agent.tools.statistics import StatisticsTools
-from test_dataset_service import application
-from test_dataset_storage import owner
-from test_migrations import run
-from test_migrations import settings as settings
-from test_statistics_agent import Sink
-from test_statistics_tool_executor import context
+from support.agent import Sink
+from support.database import run
+from support.datasets import application, context, owner
 
 pytestmark = pytest.mark.postgres
 DATA = b"x,y,g\n1,2,A\n2,4,A\n3,6,B"
@@ -189,10 +187,10 @@ async def execute(
 
 @pytest.mark.parametrize("name,arguments", OPERATIONS)
 def test_full_registry_executes_real_owned_tool_and_validates_finalization(
-    settings, name, arguments
+    migration_settings, name, arguments
 ):
     async def exercise():
-        async with application(settings) as (_, store, worker, datasets):
+        async with application(migration_settings) as (_, store, worker, datasets):
             principal = owner()
             metadata = await datasets.ingest(principal, filename="fixture.csv", content=DATA)
             result, requests, events, reservations = await execute(
@@ -246,9 +244,11 @@ def test_full_registry_executes_real_owned_tool_and_validates_finalization(
         {"result_limit": 1},
     ],
 )
-def test_denied_malformed_or_oversized_work_cannot_create_success_artifacts(settings, options):
+def test_denied_malformed_or_oversized_work_cannot_create_success_artifacts(
+    migration_settings, options
+):
     async def exercise():
-        async with application(settings) as (database, store, worker, datasets):
+        async with application(migration_settings) as (database, store, worker, datasets):
             principal = owner()
             metadata = await datasets.ingest(principal, filename="fixture.csv", content=DATA)
             result, requests, events, _ = await execute(
@@ -271,9 +271,9 @@ def test_denied_malformed_or_oversized_work_cannot_create_success_artifacts(sett
     run(exercise())
 
 
-def test_invalid_final_explanation_preserves_previously_verified_results(settings):
+def test_invalid_final_explanation_preserves_previously_verified_results(migration_settings):
     async def exercise():
-        async with application(settings) as (_, store, worker, datasets):
+        async with application(migration_settings) as (_, store, worker, datasets):
             principal = owner()
             metadata = await datasets.ingest(principal, filename="fixture.csv", content=DATA)
             result, requests, events, _ = await execute(
@@ -295,9 +295,9 @@ def test_invalid_final_explanation_preserves_previously_verified_results(setting
     run(exercise())
 
 
-def test_large_question_stops_before_http_dispatch_without_raising_input_cap(settings):
+def test_large_question_stops_before_http_dispatch_without_raising_input_cap(migration_settings):
     async def exercise():
-        async with application(settings) as (_, store, worker, datasets):
+        async with application(migration_settings) as (_, store, worker, datasets):
             principal = owner()
             metadata = await datasets.ingest(principal, filename="fixture.csv", content=DATA)
             result, requests, events, _ = await execute(
@@ -318,9 +318,9 @@ def test_large_question_stops_before_http_dispatch_without_raising_input_cap(set
 
 
 @pytest.mark.parametrize("state", ["unowned", "deleted", "missing"])
-def test_unavailable_dataset_cannot_be_loaded_through_agent(settings, state):
+def test_unavailable_dataset_cannot_be_loaded_through_agent(migration_settings, state):
     async def exercise():
-        async with application(settings) as (_, store, worker, datasets):
+        async with application(migration_settings) as (_, store, worker, datasets):
             principal = owner()
             metadata = await datasets.ingest(principal, filename="fixture.csv", content=DATA)
             if state == "unowned":
@@ -371,10 +371,10 @@ def test_unavailable_dataset_cannot_be_loaded_through_agent(settings, state):
     ],
 )
 def test_invalid_or_numerically_failed_agent_work_never_becomes_a_verified_result(
-    settings, name, arguments, data, code
+    migration_settings, name, arguments, data, code
 ):
     async def exercise():
-        async with application(settings) as (_, store, worker, datasets):
+        async with application(migration_settings) as (_, store, worker, datasets):
             principal = owner()
             metadata = await datasets.ingest(principal, filename="fixture.csv", content=data)
             result, requests, events, _ = await execute(
@@ -392,9 +392,9 @@ def test_invalid_or_numerically_failed_agent_work_never_becomes_a_verified_resul
     run(exercise())
 
 
-def test_separate_owned_datasets_produce_distinct_results_without_joins(settings):
+def test_separate_owned_datasets_produce_distinct_results_without_joins(migration_settings):
     async def exercise():
-        async with application(settings) as (_, store, worker, datasets):
+        async with application(migration_settings) as (_, store, worker, datasets):
             principal = owner()
             metadata = [
                 await datasets.ingest(principal, filename="fixture.csv", content=data)
@@ -423,9 +423,11 @@ def test_separate_owned_datasets_produce_distinct_results_without_joins(settings
     run(exercise())
 
 
-def test_accumulated_input_limit_preserves_real_artifact_and_skips_next_model_call(settings):
+def test_accumulated_input_limit_preserves_real_artifact_and_skips_next_model_call(
+    migration_settings,
+):
     async def exercise():
-        async with application(settings) as (_, store, worker, datasets):
+        async with application(migration_settings) as (_, store, worker, datasets):
             principal = owner()
             metadata = await datasets.ingest(principal, filename="fixture.csv", content=DATA)
             result, requests, _, reservations = await execute(

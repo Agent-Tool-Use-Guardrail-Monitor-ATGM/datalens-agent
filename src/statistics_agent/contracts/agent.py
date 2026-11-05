@@ -204,3 +204,35 @@ class EventSink(Protocol):
         Exceptions prevent dispatch. This declaration supplies no durability.
         """
         ...
+
+
+class DatasetSummary(Contract):
+    """Owner-authorized metadata only; loading and ownership are supplied by plan 5."""
+
+    dataset_id: UUID
+    row_count: Annotated[int, Field(strict=True, ge=0)]
+    columns: tuple[Annotated[str, Field(strict=True, min_length=1, max_length=128)], ...] = Field(
+        min_length=1, max_length=128
+    )
+
+
+class StatisticsAnswer(Contract):
+    status: Literal["completed", "unsupported", "incomplete"]
+    explanation: BoundedText = Field(min_length=1, repr=False)
+    result_ids: tuple[UUID, ...] = Field(default=(), max_length=128)
+    assumptions: tuple[Annotated[str, Field(strict=True, max_length=1024)], ...] = Field(
+        default=(), max_length=16, repr=False
+    )
+
+    @model_validator(mode="after")
+    def require_computed_results(self) -> Self:
+        if self.status == "completed" and not self.result_ids:
+            raise ValueError("Completed statistics require computed-result references")
+        return self
+
+
+class StatisticsRun(Contract):
+    terminal_reason: ShortReference = "unspecified"
+    answer: StatisticsAnswer
+    state: AgentState = Field(repr=False)
+    results: tuple[ToolResult, ...] = Field(default=(), max_length=128, repr=False)

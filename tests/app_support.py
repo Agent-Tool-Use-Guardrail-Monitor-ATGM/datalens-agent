@@ -3,7 +3,7 @@
 from statistics_agent.app import create_app as application_factory
 from statistics_agent.core.auth import AuthSettings
 from statistics_agent.core.settings import load_settings
-from test_token_encryption import keyring
+from support.crypto import keyring
 
 
 def create_app(settings=None, **kwargs):

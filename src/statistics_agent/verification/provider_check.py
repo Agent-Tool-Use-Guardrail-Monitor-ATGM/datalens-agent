@@ -14,15 +14,18 @@ from uuid import uuid4
 import httpx
 from pydantic import ValidationError
 
+from statistics_agent.agent.prompts import FINALIZE
 from statistics_agent.agent.provider import ModelAdapter
-from statistics_agent.agent.statistics import (
-    FINALIZE,
+from statistics_agent.agent.statistics import StatisticsSession
+from statistics_agent.agent.tool_schema import ToolBinding
+from statistics_agent.contracts.agent import (
+    AgentContext,
     DatasetSummary,
+    ProviderFailure,
     StatisticsAnswer,
-    StatisticsSession,
-    ToolBinding,
+    ToolDecision,
+    ToolResult,
 )
-from statistics_agent.contracts.agent import AgentContext, ProviderFailure, ToolDecision, ToolResult
 from statistics_agent.contracts.auth import AuthorizedPrincipal
 from statistics_agent.contracts.common import ConfigurationReference, Contract
 from statistics_agent.core.model_settings import ModelSettings, load_model_settings

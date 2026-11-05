@@ -1,19 +1,13 @@
 """Baseline deployment and read-only schema gates, using disposable PostgreSQL."""
 
-import asyncio
 import io
-import os
 import shutil
-from contextlib import asynccontextmanager
 from importlib.resources import files
-from uuid import uuid4
 
 import pytest
 from alembic import command
 from sqlalchemy import text
-from sqlalchemy.engine import make_url
 
-from statistics_agent.core.event_loop import create_event_loop
 from statistics_agent.core.settings import Settings
 from statistics_agent.persistence.database import Database
 from statistics_agent.persistence.migrate import execute, main
@@ -24,27 +18,10 @@ from statistics_agent.persistence.schema import (
     read_schema_status,
     validate_migration_target,
 )
+from support.database import apply, run, sandbox, status
 
 BASELINE = "0001_agent_baseline"
 HEAD = "0004_dataset_storage"
-
-
-def run(coroutine):
-    with asyncio.Runner(loop_factory=create_event_loop) as runner:
-        return runner.run(coroutine)
-
-
-@pytest.fixture
-def settings():
-    raw = os.environ.get("TEST_DATABASE_URL")
-    if not raw:
-        if os.environ.get("CI"):
-            pytest.fail("CI must supply TEST_DATABASE_URL; migration checks cannot be skipped")
-        pytest.skip("Set TEST_DATABASE_URL to the disposable agent_test_db fixture")
-    url = make_url(raw)
-    if url.database != "agent_test_db" or url.username != "agent_test":
-        pytest.fail("Migration tests require the dedicated agent_test user and agent_test_db")
-    return Settings(app_env="test", database_url=raw)
 
 
 def test_single_packaged_head_needs_no_settings_or_network(monkeypatch):
@@ -68,11 +45,11 @@ def test_offline_baseline_sql_needs_no_credentials_or_database(monkeypatch):
 
 @pytest.mark.parametrize("database", ["identity_db", "postgres", "unrelated_db"])
 def test_migration_target_rejects_identity_and_unrelated_databases(database):
-    settings = Settings(
+    migration_settings = Settings(
         database_url=f"postgresql+psycopg://user:private-value@localhost/{database}"
     )
     with pytest.raises(ValueError, match="agent-owned"):
-        validate_migration_target(settings)
+        validate_migration_target(migration_settings)
 
 
 @pytest.mark.parametrize(
@@ -102,51 +79,17 @@ def test_cli_rejects_identity_before_contacting_it(monkeypatch, capsys):
 
 
 def test_manual_downgrade_rejects_persistent_agent_database():
-    settings = Settings(
+    migration_settings = Settings(
         app_env="development", database_url="postgresql+psycopg://user:pass@localhost/agent_db"
     )
     with pytest.raises(ValueError, match="disposable test"):
-        run(execute(settings, "downgrade-test"))
-
-
-@asynccontextmanager
-async def sandbox(settings):
-    database = Database(settings)
-    schema = "migration_" + uuid4().hex
-    config = migration_config()
-    config.attributes["version_table_schema"] = schema
-    try:
-        async with database.engine.begin() as connection:
-            await connection.execute(text(f"CREATE SCHEMA {schema}"))
-        yield database, schema, config
-    finally:
-        try:
-            async with database.engine.begin() as connection:
-                await connection.execute(text(f"DROP SCHEMA IF EXISTS {schema} CASCADE"))
-        finally:
-            await database.close()
-
-
-async def apply(database, schema, config, action, revision):
-    async with database.engine.begin() as connection:
-        await connection.execute(text(f"SET LOCAL search_path TO {schema}"))
-
-        def migrate(sync_connection):
-            config.attributes["connection"] = sync_connection
-            getattr(command, action)(config, revision)
-
-        await connection.run_sync(migrate)
-
-
-async def status(database, schema):
-    async with database.engine.connect() as connection:
-        return await read_schema_status(connection, version_table_schema=schema)
+        run(execute(migration_settings, "downgrade-test"))
 
 
 @pytest.mark.postgres
-def test_empty_database_upgrades_repeats_downgrades_and_reupgrades(settings):
+def test_empty_database_upgrades_repeats_downgrades_and_reupgrades(migration_settings):
     async def exercise():
-        async with sandbox(settings) as (database, schema, config):
+        async with sandbox(migration_settings) as (database, schema, config):
             initial = await status(database, schema)
             assert initial.current_heads == ()
             assert not initial.is_current
@@ -202,9 +145,9 @@ def test_empty_database_upgrades_repeats_downgrades_and_reupgrades(settings):
 
 
 @pytest.mark.postgres
-def test_unknown_database_revision_fails_check_instead_of_stamping_or_repairing(settings):
+def test_unknown_database_revision_fails_check_instead_of_stamping_or_repairing(migration_settings):
     async def exercise():
-        async with sandbox(settings) as (database, schema, config):
+        async with sandbox(migration_settings) as (database, schema, config):
             await apply(database, schema, config, "upgrade", "head")
             async with database.session() as session:
                 await session.execute(
@@ -218,7 +161,9 @@ def test_unknown_database_revision_fails_check_instead_of_stamping_or_repairing(
 
 
 @pytest.mark.postgres
-def test_failed_upgrade_rolls_back_ddl_and_preserves_previous_revision(settings, tmp_path):
+def test_failed_upgrade_rolls_back_ddl_and_preserves_previous_revision(
+    migration_settings, tmp_path
+):
     scripts = tmp_path / "migrations"
     shutil.copytree(files("statistics_agent.persistence").joinpath("migrations"), scripts)
     (scripts / "versions/0002_failure.py").write_text(
@@ -237,7 +182,7 @@ def downgrade():
     )
 
     async def exercise():
-        async with sandbox(settings) as (database, schema, config):
+        async with sandbox(migration_settings) as (database, schema, config):
             await apply(database, schema, config, "upgrade", HEAD)
             config.set_main_option("script_location", str(scripts))
             with pytest.raises(RuntimeError, match="Controlled failed"):
@@ -256,19 +201,19 @@ def downgrade():
 
 @pytest.mark.postgres
 def test_explicit_cli_upgrade_and_check_with_local_env_file(
-    settings, tmp_path, monkeypatch, capsys
+    migration_settings, tmp_path, monkeypatch, capsys
 ):
     for name, field in Settings.model_fields.items():
         monkeypatch.delenv(name, raising=False)
         monkeypatch.delenv(str(field.validation_alias), raising=False)
     env_file = tmp_path / ".env"
     env_file.write_text(
-        "APP_ENV=test\nDATABASE_URL=" + settings.database_url.get_secret_value() + "\n",
+        "APP_ENV=test\nDATABASE_URL=" + migration_settings.database_url.get_secret_value() + "\n",
         encoding="utf-8",
     )
 
     async def current():
-        database = Database(settings)
+        database = Database(migration_settings)
         try:
             async with database.engine.connect() as connection:
                 return await read_schema_status(connection)

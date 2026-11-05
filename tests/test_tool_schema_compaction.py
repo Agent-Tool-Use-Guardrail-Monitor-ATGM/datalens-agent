@@ -6,7 +6,8 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from statistics_agent.agent.statistics import model_tool_schema, observation_summary
+from statistics_agent.agent.statistics import observation_summary
+from statistics_agent.agent.tool_schema import model_tool_schema
 from statistics_agent.contracts.datasets import DescribeColumnsArguments
 from statistics_agent.tools.statistics import STATISTICS_BINDINGS
 

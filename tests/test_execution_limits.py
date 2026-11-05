@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import pytest
 
-from test_statistics_agent import create
+from support.agent import create
 
 
 def unsupported():
@@ -28,26 +28,22 @@ def unsupported():
     )
 
 
-def replace_transport(session, handler):
-    session._adapter._transport = httpx.MockTransport(handler)
-
-
 def test_retry_has_stable_logical_identity_distinct_attempt_indices_and_no_fallback():
-    session, dataset, _, _, sink, _ = create()
-    original = session._adapter._transport.handler
+    session, dataset, _, _, sink, _ = create(
+        response_handler=lambda request, original: handler(request, original)
+    )
     calls, delays = [], []
 
     async def sleep(delay):
         delays.append(delay)
 
-    def handler(request):
+    def handler(request, original):
         calls.append((str(request.url), json.loads(request.content)["model"]))
         if len(calls) == 1:
             return httpx.Response(429, headers={"retry-after": "0.25"}, text="sensitive quota body")
         return original(request)
 
     session._sleep = sleep
-    replace_transport(session, handler)
     result = asyncio.run(session.run("Average?", (dataset,)))
     assert result.answer.status == "completed"
     assert delays == [0.25]
@@ -72,7 +68,9 @@ def test_retry_has_stable_logical_identity_distinct_attempt_indices_and_no_fallb
     ],
 )
 def test_permanent_failure_and_retry_exhaustion_are_bounded(status, reason, attempts):
-    session, dataset, _, executed, sink, _ = create()
+    session, dataset, _, executed, sink, _ = create(
+        response_handler=lambda request, original: handler(request, original)
+    )
     calls = []
 
     async def sleep(_):
@@ -80,11 +78,10 @@ def test_permanent_failure_and_retry_exhaustion_are_bounded(status, reason, atte
 
     session._sleep = sleep
 
-    def handler(request):
+    def handler(request, original):
         calls.append(request)
         return httpx.Response(status, text="secret error")
 
-    replace_transport(session, handler)
     result = asyncio.run(session.run("Question", (dataset,)))
     assert result.answer.status == "incomplete"
     assert result.terminal_reason == reason
@@ -93,14 +90,15 @@ def test_permanent_failure_and_retry_exhaustion_are_bounded(status, reason, atte
 
 
 def test_unknown_timeout_is_not_retried():
-    session, dataset, _, executed, sink, _ = create()
+    session, dataset, _, executed, sink, _ = create(
+        response_handler=lambda request, original: handler(request, original)
+    )
     calls = []
 
-    def handler(request):
+    def handler(request, original):
         calls.append(request)
         raise httpx.ReadTimeout("secret", request=request)
 
-    replace_transport(session, handler)
     result = asyncio.run(session.run("Question", (dataset,)))
     assert result.terminal_reason == "model_timeout"
     assert len(calls) == 1 and sink.events[0].data["outcome_unknown"]
@@ -109,8 +107,11 @@ def test_unknown_timeout_is_not_retried():
 
 @pytest.mark.parametrize("header", ["11", "3601"])
 def test_retry_after_above_local_wait_limit_stops_without_early_retry(header):
-    session, dataset, _, _, sink, _ = create()
-    replace_transport(session, lambda _: httpx.Response(429, headers={"retry-after": header}))
+    session, dataset, _, _, sink, _ = create(
+        response_handler=lambda request, original: httpx.Response(
+            429, headers={"retry-after": header}
+        )
+    )
     result = asyncio.run(session.run("Question", (dataset,)))
     assert result.terminal_reason == "retry_delay_exceeded"
     assert len(sink.events) == 1
@@ -134,10 +135,11 @@ def test_admission_budgets_prevent_additional_calls(settings, reason):
 
 
 def test_reported_counts_refund_reservations_without_double_counting_subsets():
-    session, dataset, _, _, _, _ = create()
-    original = session._adapter._transport.handler
+    session, dataset, _, _, _, _ = create(
+        response_handler=lambda request, original: handler(request, original)
+    )
 
-    def handler(request):
+    def handler(request, original):
         data = original(request).json()
         data["usage"] = {
             "prompt_tokens": 20,
@@ -147,7 +149,6 @@ def test_reported_counts_refund_reservations_without_double_counting_subsets():
         }
         return httpx.Response(200, json=data)
 
-    replace_transport(session, handler)
     result = asyncio.run(session.run("Question", (dataset,)))
     assert result.answer.status == "completed"
     assert result.state.remaining_input_tokens == 32768 - 40
@@ -155,15 +156,15 @@ def test_reported_counts_refund_reservations_without_double_counting_subsets():
 
 
 def test_reported_overrun_prevents_tool_dispatch():
-    session, dataset, _, executed, _, _ = create()
-    original = session._adapter._transport.handler
+    session, dataset, _, executed, _, _ = create(
+        response_handler=lambda request, original: handler(request, original)
+    )
 
-    def handler(request):
+    def handler(request, original):
         data = original(request).json()
         data["usage"] = {"prompt_tokens": 9000, "completion_tokens": 2}
         return httpx.Response(200, json=data)
 
-    replace_transport(session, handler)
     result = asyncio.run(session.run("Question", (dataset,)))
     assert result.terminal_reason == "reported_usage_exceeded_reservation"
     assert not executed
@@ -209,13 +210,15 @@ def test_expired_deadline_permits_no_call():
 
 
 def test_access_is_rechecked_after_backoff():
-    session, dataset, _, _, sink, _ = create(access=[True, False])
+    session, dataset, _, _, sink, _ = create(
+        access=[True, False],
+        response_handler=lambda request, original: httpx.Response(429),
+    )
 
     async def sleep(_):
         pass
 
     session._sleep = sleep
-    replace_transport(session, lambda _: httpx.Response(429))
     result = asyncio.run(session.run("Question", (dataset,)))
     assert result.terminal_reason == "access_unavailable"
     assert len(sink.events) == 1
@@ -229,13 +232,17 @@ def test_prompt_admission_rejects_excess_input_before_request():
 
 
 def test_deadline_covers_retry_backoff():
-    session, dataset, _, _, sink, _ = create(settings_overrides={"LLM_RUN_TIMEOUT_SECONDS": 0.03})
+    session, dataset, _, _, sink, _ = create(
+        settings_overrides={"LLM_RUN_TIMEOUT_SECONDS": 0.03},
+        response_handler=lambda request, original: httpx.Response(
+            429, headers={"retry-after": "0"}
+        ),
+    )
 
     async def sleep(_):
         await asyncio.sleep(10)
 
     session._sleep = sleep
-    replace_transport(session, lambda _: httpx.Response(429, headers={"retry-after": "0"}))
     result = asyncio.run(session.run("Question", (dataset,)))
     assert result.terminal_reason == "deadline_exceeded"
     assert len(sink.events) == 1
@@ -243,12 +250,16 @@ def test_deadline_covers_retry_backoff():
 
 def test_process_shared_concurrency_and_queue_cancellation_release_slots():
     async def exercise():
-        first, dataset, *_ = create()
-        second, other, *_ = create()
+        first, dataset, *_ = create(
+            response_handler=lambda request, original: handler(request, original)
+        )
+        second, other, *_ = create(
+            response_handler=lambda request, original: handler(request, original)
+        )
         assert first._adapter._limiter is second._adapter._limiter
         active = peak = 0
 
-        async def handler(_):
+        async def handler(_, original):
             nonlocal active, peak
             active += 1
             peak = max(active, peak)
@@ -256,12 +267,11 @@ def test_process_shared_concurrency_and_queue_cancellation_release_slots():
             active -= 1
             return unsupported()
 
-        replace_transport(first, handler)
-        replace_transport(second, handler)
         outcomes = await asyncio.gather(first.run("one", (dataset,)), second.run("two", (other,)))
         assert peak == 1 and all(r.answer.status == "unsupported" for r in outcomes)
-        queued, data, *_ = create()
-        replace_transport(queued, lambda _: pytest.fail("queued request was sent"))
+        queued, data, *_ = create(
+            response_handler=lambda request, original: pytest.fail("queued request was sent")
+        )
         async with queued._adapter._limiter.slot():
             task = asyncio.create_task(queued.run("cancel", (data,)))
             await asyncio.sleep(0.02)

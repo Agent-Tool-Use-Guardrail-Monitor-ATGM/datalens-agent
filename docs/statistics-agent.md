@@ -128,3 +128,12 @@ The 4096-unit cap still rejects oversized initial/accumulated requests; verified
 artifacts survive a later stop. See [full tool integration](agent-tool-integration.md).
 See [provider verification](provider-verification.md) for current evidence; the
 preceding step 4.4 counts and prompt version describe historical evidence.
+
+## Current module ownership
+
+The [module boundary refactor](module-boundaries.md) moves DatasetSummary,
+StatisticsAnswer and StatisticsRun into `contracts/agent.py`; ToolBinding and
+schema compaction into `agent/tool_schema.py`; and prompt/control definitions
+into `agent/prompts.py`. Existing import paths remain compatible. The controlled
+runner keeps execution/finalization as private phases without changing their
+authorization, accounting or evidence behavior.

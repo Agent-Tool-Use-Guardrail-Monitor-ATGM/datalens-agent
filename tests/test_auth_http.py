@@ -12,11 +12,12 @@ import pytest
 from pydantic import SecretStr
 
 from statistics_agent.app import create_app
+from statistics_agent.contracts.sessions import LoginStart
 from statistics_agent.core.auth import AuthSettings
 from statistics_agent.core.settings import ConfigurationError, Settings
-from statistics_agent.persistence.auth import LoginStart, PendingLoginError
-from test_oidc_provider import SyntheticProvider
-from test_token_encryption import keyring
+from statistics_agent.persistence.auth import PendingLoginError
+from support.auth import SyntheticProvider
+from support.crypto import keyring
 
 
 class ProtocolStore:

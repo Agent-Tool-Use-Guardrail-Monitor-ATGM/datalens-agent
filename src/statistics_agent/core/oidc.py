@@ -14,10 +14,10 @@ from pydantic import SecretStr
 
 from statistics_agent.contracts.auth import AuthFailureCode, VerifiedIdentity
 from statistics_agent.contracts.common import AuthenticatedPrincipal
+from statistics_agent.contracts.sessions import Credentials
 from statistics_agent.core.auth import AuthSettings
 from statistics_agent.core.auth_secrets import AuthSecrets, unique_object
 from statistics_agent.core.settings import ConfigurationError
-from statistics_agent.persistence.auth import Credentials
 
 
 class AuthenticationError(Exception):

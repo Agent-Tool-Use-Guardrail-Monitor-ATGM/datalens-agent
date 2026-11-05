@@ -19,11 +19,8 @@ from statistics_agent.persistence.models import DatasetArtifact
 from statistics_agent.tools.aggregation import aggregate_statistics, correlate_columns
 from statistics_agent.tools.descriptive import StatisticsToolError
 from statistics_agent.tools.statistics import MAX_SUMMARY_BYTES, StatisticsTools
-from test_dataset_service import application
-from test_dataset_storage import owner
-from test_migrations import run
-from test_migrations import settings as settings
-from test_statistics_tool_executor import context, proposal
+from support.database import run
+from support.datasets import application, context, owner, proposal
 
 
 def aggregate(
@@ -245,9 +242,11 @@ class TestAggregateCorrelationExecutor:
             ),
         ],
     )
-    def test_new_bindings_persist_correct_owned_typed_artifacts(self, settings, name, args, raw):
+    def test_new_bindings_persist_correct_owned_typed_artifacts(
+        self, migration_settings, name, args, raw
+    ):
         async def exercise():
-            async with application(settings) as (_, store, worker, datasets):
+            async with application(migration_settings) as (_, store, worker, datasets):
                 principal = owner()
                 value = await datasets.ingest(principal, filename="data.csv", content=raw)
                 request = proposal(name, value.dataset_id, **args)
@@ -297,9 +296,11 @@ class TestAggregateCorrelationExecutor:
             ),
         ],
     )
-    def test_rejected_calls_create_no_success_artifacts(self, settings, name, args, expected):
+    def test_rejected_calls_create_no_success_artifacts(
+        self, migration_settings, name, args, expected
+    ):
         async def exercise():
-            async with application(settings) as (database, store, worker, datasets):
+            async with application(migration_settings) as (database, store, worker, datasets):
                 principal = owner()
                 value = await datasets.ingest(
                     principal, filename="data.csv", content=b"g,x,y\nA,1,2\nB,2,\nC,3,6"
@@ -320,9 +321,11 @@ class TestAggregateCorrelationExecutor:
 
         run(exercise())
 
-    def test_grouped_large_result_uses_complete_artifact_and_explicit_notice(self, settings):
+    def test_grouped_large_result_uses_complete_artifact_and_explicit_notice(
+        self, migration_settings
+    ):
         async def exercise():
-            async with application(settings) as (_, store, worker, datasets):
+            async with application(migration_settings) as (_, store, worker, datasets):
                 principal = owner()
                 raw = ("g,x\n" + "\n".join(f"G{i},1" for i in range(20))).encode()
                 value = await datasets.ingest(principal, filename="groups.csv", content=raw)
@@ -361,9 +364,9 @@ class TestAggregateCorrelationExecutor:
             ),
         ],
     )
-    def test_new_tools_enforce_owner_boundary(self, settings, name, args):
+    def test_new_tools_enforce_owner_boundary(self, migration_settings, name, args):
         async def exercise():
-            async with application(settings) as (_, store, worker, datasets):
+            async with application(migration_settings) as (_, store, worker, datasets):
                 value = await datasets.ingest(
                     owner(), filename="data.csv", content=b"x,y\n1,2\n2,4\n3,6"
                 )

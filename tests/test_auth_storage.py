@@ -1,116 +1,25 @@
 """Session security and concurrency on migrated, disposable PostgreSQL schemas."""
 
 import asyncio
-import os
-from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
 
 import pytest
-from alembic import command
-from pydantic import SecretStr
-from sqlalchemy import event, select, text, update
-from sqlalchemy.engine import make_url
+from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
 
-from statistics_agent.contracts.common import AuthenticatedPrincipal
-from statistics_agent.core.auth import AuthSettings
-from statistics_agent.core.event_loop import create_event_loop
-from statistics_agent.core.settings import Settings
 from statistics_agent.core.token_encryption import SecretEnvelopeError, TokenEncryption
-from statistics_agent.persistence.auth import (
-    AuthStore,
-    Credentials,
-    PendingLoginError,
-    opaque_secret,
-)
-from statistics_agent.persistence.database import Database
+from statistics_agent.persistence.auth import AuthStore, PendingLoginError, opaque_secret
 from statistics_agent.persistence.models import BrowserSession, LoginAttempt
-from statistics_agent.persistence.schema import migration_config
-from test_token_encryption import keyring
+from support.auth import auth_settings, credentials, principal, storage
+from support.database import run
 
 pytestmark = pytest.mark.postgres
 NOW = datetime(2026, 10, 27, 12, tzinfo=UTC)
 
 
-def run(coroutine):
-    with asyncio.Runner(loop_factory=create_event_loop) as runner:
-        return runner.run(coroutine)
-
-
-@pytest.fixture
-def settings():
-    raw = os.environ.get("TEST_DATABASE_URL")
-    if not raw:
-        if os.environ.get("CI"):
-            pytest.fail("CI must supply TEST_DATABASE_URL; auth storage cannot be skipped")
-        pytest.skip("Set TEST_DATABASE_URL to disposable agent_test_db")
-    url = make_url(raw)
-    if url.database != "agent_test_db" or url.username != "agent_test":
-        pytest.fail("Auth tests require agent_test and agent_test_db")
-    return Settings(app_env="test", database_url=raw, db_pool_size=4)
-
-
-def auth_settings():
-    return AuthSettings(
-        app_env="test",
-        client_secret_file="unused-client",
-        encryption_keys_file="unused-ring",
-    )
-
-
-def credentials(suffix="first"):
-    return Credentials(
-        SecretStr("private-access-" + suffix),
-        SecretStr("private-refresh-" + suffix),
-        SecretStr("private-id-" + suffix),
-    )
-
-
-@asynccontextmanager
-async def storage(settings):
-    database = Database(settings)
-    schema = "auth_" + uuid4().hex
-    config = migration_config()
-    config.attributes["version_table_schema"] = schema
-    ring = keyring()
-    try:
-        async with database.engine.begin() as connection:
-            await connection.execute(text(f"CREATE SCHEMA {schema}"))
-            await connection.execute(text(f"SET LOCAL search_path TO {schema}"))
-
-            def migrate(connection):
-                config.attributes["connection"] = connection
-                command.upgrade(config, "head")
-
-            await connection.run_sync(migrate)
-
-        # Each pooled checkout gets the server-generated isolated schema; no
-        # production table or persistent developer database is used as a fixture.
-        def set_schema(connection, record, proxy):
-            cursor = connection.cursor()
-            cursor.execute(f"SET search_path TO {schema}")
-            connection.commit()
-            cursor.close()
-
-        event.listen(database.engine.sync_engine, "checkout", set_schema)
-        store = AuthStore(database, auth_settings(), TokenEncryption(ring))
-        yield database, store, ring
-    finally:
-        try:
-            async with database.engine.begin() as connection:
-                await connection.execute(text(f"DROP SCHEMA IF EXISTS {schema} CASCADE"))
-        finally:
-            await database.close()
-
-
-def principal(subject="user-one"):
-    return AuthenticatedPrincipal(issuer=auth_settings().issuer, subject=subject)
-
-
-def test_login_is_browser_bound_one_use_and_committed_before_decryption(settings):
+def test_login_is_browser_bound_one_use_and_committed_before_decryption(auth_storage_settings):
     async def exercise():
-        async with storage(settings) as (database, store, ring):
+        async with storage(auth_storage_settings) as (database, store, ring):
             attempt = await store.start_login(now=NOW)
             assert await store.consume_login(attempt.state, opaque_secret(), now=NOW) is None
             assert (
@@ -141,9 +50,11 @@ def test_login_is_browser_bound_one_use_and_committed_before_decryption(settings
     run(exercise())
 
 
-def test_pending_browser_login_is_unique_under_concurrency_and_expires_at_boundary(settings):
+def test_pending_browser_login_is_unique_under_concurrency_and_expires_at_boundary(
+    auth_storage_settings,
+):
     async def exercise():
-        async with storage(settings) as (_, store, _ring):
+        async with storage(auth_storage_settings) as (_, store, _ring):
             binding = opaque_secret()
             results = await asyncio.gather(
                 *(store.start_login(binding, now=NOW) for _ in range(2)), return_exceptions=True
@@ -163,9 +74,11 @@ def test_pending_browser_login_is_unique_under_concurrency_and_expires_at_bounda
     run(exercise())
 
 
-def test_session_roundtrip_restart_no_plaintext_and_no_positive_authorization_cache(settings):
+def test_session_roundtrip_restart_no_plaintext_and_no_positive_authorization_cache(
+    auth_storage_settings,
+):
     async def exercise():
-        async with storage(settings) as (database, store, ring):
+        async with storage(auth_storage_settings) as (database, store, ring):
             created = await store.create_session(principal(), credentials(), now=NOW)
             assert await store.read_session(opaque_secret(), now=NOW) is None
             restarted = AuthStore(database, auth_settings(), TokenEncryption(ring))
@@ -205,9 +118,9 @@ def test_session_roundtrip_restart_no_plaintext_and_no_positive_authorization_ca
     run(exercise())
 
 
-def test_idle_absolute_deadlines_and_revocation_cannot_be_extended(settings):
+def test_idle_absolute_deadlines_and_revocation_cannot_be_extended(auth_storage_settings):
     async def exercise():
-        async with storage(settings) as (_, store, _ring):
+        async with storage(auth_storage_settings) as (_, store, _ring):
             created = await store.create_session(principal(), credentials(), now=NOW)
             assert await store.read_session(created.cookie, now=NOW - timedelta(seconds=1)) is None
             assert await store.touch_session(
@@ -245,9 +158,9 @@ def test_idle_absolute_deadlines_and_revocation_cannot_be_extended(settings):
     run(exercise())
 
 
-def test_concurrent_credential_updates_have_one_winner_and_preserve_cookie(settings):
+def test_concurrent_credential_updates_have_one_winner_and_preserve_cookie(auth_storage_settings):
     async def exercise():
-        async with storage(settings) as (_, store, _ring):
+        async with storage(auth_storage_settings) as (_, store, _ring):
             created = await store.create_session(principal(), credentials(), now=NOW)
             results = await asyncio.gather(
                 *(
@@ -268,9 +181,9 @@ def test_concurrent_credential_updates_have_one_winner_and_preserve_cookie(setti
     run(exercise())
 
 
-def test_cross_session_ciphertext_substitution_fails_without_resetting_data(settings):
+def test_cross_session_ciphertext_substitution_fails_without_resetting_data(auth_storage_settings):
     async def exercise():
-        async with storage(settings) as (database, store, _ring):
+        async with storage(auth_storage_settings) as (database, store, _ring):
             first = await store.create_session(principal(), credentials(), now=NOW)
             second = await store.create_session(principal("user-two"), credentials("two"), now=NOW)
             async with database.session() as session:
@@ -292,9 +205,9 @@ def test_cross_session_ciphertext_substitution_fails_without_resetting_data(sett
     run(exercise())
 
 
-def test_cleanup_is_bounded_and_preserves_live_rows(settings):
+def test_cleanup_is_bounded_and_preserves_live_rows(auth_storage_settings):
     async def exercise():
-        async with storage(settings) as (database, store, _ring):
+        async with storage(auth_storage_settings) as (database, store, _ring):
             for _ in range(3):
                 await store.start_login(now=NOW - timedelta(seconds=301))
             expired = await store.create_session(
@@ -315,9 +228,9 @@ def test_cleanup_is_bounded_and_preserves_live_rows(settings):
     run(exercise())
 
 
-def test_database_enforces_cookie_uniqueness_and_deadlines(settings):
+def test_database_enforces_cookie_uniqueness_and_deadlines(auth_storage_settings):
     async def exercise():
-        async with storage(settings) as (database, store, _ring):
+        async with storage(auth_storage_settings) as (database, store, _ring):
             first = await store.create_session(principal(), credentials(), now=NOW)
             second = await store.create_session(principal(), credentials(), now=NOW)
             async with database.session() as session:

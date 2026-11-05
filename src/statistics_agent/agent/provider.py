@@ -12,6 +12,8 @@ from uuid import uuid4
 import httpx
 from pydantic import ValidationError
 
+from statistics_agent.agent.errors import AdapterError as AdapterError
+from statistics_agent.agent.errors import EvidenceDeliveryError as EvidenceDeliveryError
 from statistics_agent.agent.limits import ModelLimiter, provider_limiter
 from statistics_agent.contracts.agent import (
     EventSink,
@@ -25,14 +27,6 @@ from statistics_agent.contracts.events import EventEnvelope
 from statistics_agent.core.model_settings import ModelSettings
 
 MAX_RESPONSE_BYTES = 1_048_576
-
-
-class AdapterError(RuntimeError):
-    """Fixed messages only. Do not wrap raw provider exceptions."""
-
-
-class EvidenceDeliveryError(AdapterError):
-    """Evidence failure prevents a response from reaching tool dispatch."""
 
 
 class ModelAdapter:
