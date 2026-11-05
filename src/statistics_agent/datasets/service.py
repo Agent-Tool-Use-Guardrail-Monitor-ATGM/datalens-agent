@@ -5,7 +5,7 @@ from uuid import UUID
 
 from statistics_agent.contracts.auth import AuthorizedPrincipal
 from statistics_agent.contracts.datasets import DatasetLimits, DatasetMetadata, DatasetPreview
-from statistics_agent.datasets.csv import ParsedDataset
+from statistics_agent.datasets.csv import CsvValidationError, ParsedDataset
 from statistics_agent.datasets.execution import DatasetParser
 from statistics_agent.persistence.database import Database
 from statistics_agent.persistence.datasets import DatasetStore
@@ -64,10 +64,31 @@ class DatasetService:
     ) -> tuple[DatasetMetadata, ...]:
         return await self._store.list_metadata(principal, limit=limit, after=after)
 
-    async def load(self, principal: AuthorizedPrincipal, dataset_id: UUID) -> LoadedDataset:
+    async def load(
+        self,
+        principal: AuthorizedPrincipal,
+        dataset_id: UUID,
+        *,
+        limits: DatasetLimits | None = None,
+    ) -> LoadedDataset:
+        admitted = DatasetLimits.model_validate(limits if limits is not None else self._limits)
+        # An execution may tighten admission, never relax the service's own limits.
+        bounds = DatasetLimits.model_validate(
+            {
+                name: min(value, getattr(admitted, name)) if type(value) is int else value
+                for name, value in self._limits.model_dump().items()
+            }
+        )
         metadata = await self._store.get_metadata(principal, dataset_id)
+        if (
+            metadata.byte_count > bounds.max_upload_bytes
+            or metadata.row_count > bounds.max_rows
+            or len(metadata.columns) > bounds.max_columns
+            or any(len(column.name) > bounds.max_column_name for column in metadata.columns)
+        ):
+            raise CsvValidationError("dataset_limit_exceeded")
         content = await self._store.get_content(principal, dataset_id)
-        parsed = await self._parser.parse(content, limits=self._limits)
+        parsed = await self._parser.parse(content, limits=bounds)
         # Parsing holds no DB transaction. Re-read ownership/existence after it,
         # so a deletion during parsing cannot return a successfully loaded view.
         current = await self._store.get_metadata(principal, dataset_id)

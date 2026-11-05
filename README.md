@@ -1,5 +1,13 @@
 # DataLens statistics-agent development
 
+Latest step: [6.3 resource and output guards](docs/tool-resource-guards.md), complete
+locally on `feature/tool-resource-guards`; required PR tests/delivery pending.
+Step 6.2 delivery is accepted from the user's pull confirmation. Numerical loads
+now enforce execution-specific dataset bounds without relaxing service limits.
+Existing worker, timeout, group, artifact and observation guards remain active.
+Verification: 831 passed, 17 browser tests deselected; Ruff/format/pip/whitespace
+checks pass. Next is 6.4 composition after delivery and user instruction.
+
 [Plan 3 integration evidence and frontend/agent handoff](docs/access-handoff.md)
 records the verified access contract and recovery/test procedures.
 
