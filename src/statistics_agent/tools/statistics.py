@@ -10,6 +10,7 @@ from statistics_agent.contracts.agent import AgentContext, ToolProposal, ToolRes
 from statistics_agent.contracts.datasets import (
     AggregateStatisticsArguments,
     CorrelateColumnsArguments,
+    DatasetLimits,
     DescribeColumnsArguments,
     InspectDatasetArguments,
     StatisticsLimits,
@@ -77,10 +78,14 @@ class StatisticsTools:
         worker: DatasetParser,
         artifacts: DatasetStore,
         limits: StatisticsLimits | None = None,
+        dataset_limits: DatasetLimits | None = None,
     ):
         self._datasets, self._worker, self._artifacts = datasets, worker, artifacts
         self._limits = StatisticsLimits.model_validate(
             limits if limits is not None else StatisticsLimits()
+        )
+        self._dataset_limits = DatasetLimits.model_validate(
+            dataset_limits if dataset_limits is not None else DatasetLimits()
         )
         self._bindings = {binding.name: binding for binding in self.bindings}
 
@@ -93,7 +98,9 @@ class StatisticsTools:
         except ValidationError:
             return _failed(proposal, "invalid_arguments")
         try:
-            loaded = await self._datasets.load(context.principal, arguments.dataset_id)
+            loaded = await self._datasets.load(
+                context.principal, arguments.dataset_id, limits=self._dataset_limits
+            )
             operations = {
                 "inspect_dataset": partial(inspect_dataset, loaded.parsed, arguments.dataset_id),
                 "describe_columns": partial(describe_columns, loaded.parsed, arguments),
