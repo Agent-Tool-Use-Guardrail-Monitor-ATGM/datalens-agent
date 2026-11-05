@@ -38,6 +38,7 @@ from statistics_agent.contracts.agent import StatisticsAnswer as StatisticsAnswe
 from statistics_agent.contracts.agent import StatisticsRun as StatisticsRun
 from statistics_agent.contracts.common import ConfigurationReference
 from statistics_agent.contracts.events import EventEnvelope
+from statistics_agent.contracts.policy import PolicyEvaluation
 
 
 def observation_summary(summary: str):
@@ -128,7 +129,10 @@ class StatisticsSession:
             respect_context_window=False,
         )
 
-    async def _outcome(self, proposal, status, reason):
+    async def _outcome(self, proposal, status, reason, *, evaluation=None):
+        data = {"tool_call_id": str(proposal.tool_call_id), "status": status, "reason": reason}
+        if evaluation is not None:
+            data["policy_evaluation"] = evaluation.model_dump(mode="json", exclude_none=True)
         event = EventEnvelope(
             event_id=uuid4(),
             event_type="tool_call.completed" if status == "completed" else "tool_call.failed",
@@ -137,7 +141,7 @@ class StatisticsSession:
             session_id=self._state.context.session_id,
             request_id=self._state.context.request_id,
             sequence=self._sequence(),
-            data={"tool_call_id": str(proposal.tool_call_id), "status": status, "reason": reason},
+            data=data,
         )
         try:
             await self._sink.append(event)
@@ -327,25 +331,41 @@ class StatisticsSession:
 
     async def _execute_tool(self, proposal: ToolProposal) -> StatisticsRun | None:
         context = self._state.context
+        evaluation = PolicyEvaluation(
+            tool_call_id=proposal.tool_call_id,
+            policy=self._state.versions.policy,
+            status="not_evaluated",
+        )
         binding = self._bindings.get(proposal.name)
         if binding is None:
-            await self._outcome(proposal, "failed", "unknown_tool")
+            await self._outcome(proposal, "failed", "unknown_tool", evaluation=evaluation)
             return self._finish("incomplete", "The requested operation is not available.")
         try:
             binding.arguments.model_validate_json(proposal.raw_arguments, strict=True)
         except ValidationError:
-            await self._outcome(proposal, "failed", "invalid_arguments")
+            await self._outcome(proposal, "failed", "invalid_arguments", evaluation=evaluation)
             return self._finish("incomplete", "The requested operation has invalid arguments.")
         if not await self._has_access():
-            await self._outcome(proposal, "failed", "access_denied")
+            await self._outcome(proposal, "failed", "access_denied", evaluation=evaluation)
             return self._finish("incomplete", "Access is unavailable for this operation.")
         try:
             decision = ToolDecision.model_validate(await self._policy.evaluate(context, proposal))
+            evaluation = PolicyEvaluation(
+                tool_call_id=proposal.tool_call_id,
+                policy=self._state.versions.policy,
+                status="allowed" if decision.allowed else "denied",
+                decision=decision,
+            )
         except Exception:
-            await self._outcome(proposal, "failed", "policy_unavailable")
+            evaluation = PolicyEvaluation(
+                tool_call_id=proposal.tool_call_id,
+                policy=self._state.versions.policy,
+                status="unavailable",
+            )
+            await self._outcome(proposal, "failed", "policy_unavailable", evaluation=evaluation)
             return self._finish("incomplete", "Tool policy could not be checked.")
         if decision.tool_call_id != proposal.tool_call_id or not decision.allowed:
-            await self._outcome(proposal, "failed", "policy_denied")
+            await self._outcome(proposal, "failed", "policy_denied", evaluation=evaluation)
             return self._finish("incomplete", "The requested operation is not permitted.")
         try:
             async with asyncio.timeout(self._profile.tool_timeout_seconds):
@@ -356,7 +376,7 @@ class StatisticsSession:
             result = ToolResult(tool_call_id=proposal.tool_call_id, status="timed_out")
         except Exception:
             result = ToolResult(tool_call_id=proposal.tool_call_id, status="failed")
-        await self._outcome(proposal, result.status, "execution_result")
+        await self._outcome(proposal, result.status, "execution_result", evaluation=evaluation)
         self._results.append(result)
         if result.artifact is not None and result.artifact not in self._state.artifacts:
             self._state = self._state.model_copy(
