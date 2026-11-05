@@ -146,7 +146,9 @@ def test_browser_login_success_or_safe_denial(browser_app, scenario):
                     ) as denied:
                         page.locator("#kc-login").click()
                     assert denied.value.status == 200
-                    assert page.locator("#kc-login").is_visible()
+                    # Response headers can arrive before the denial page is rendered.
+                    page.wait_for_load_state("domcontentloaded")
+                    page.locator("#kc-login").wait_for(state="visible", timeout=15000)
                     assert not any(
                         cookie["name"] == app.state.auth_settings.session_cookie_name
                         for cookie in context.cookies()

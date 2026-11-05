@@ -19,12 +19,17 @@ _ARGUMENTS = {
 }
 
 
+def parse_tool_arguments(proposal: ToolProposal):
+    """Reuse the exact argument models after a successful static rule check."""
+    return _ARGUMENTS[proposal.name].model_validate_json(proposal.raw_arguments, strict=True)
+
+
 class PolicyRules:
     """Pin a validated immutable snapshot; check() does not authorize execution.
 
     No database, identity provider, framework or mutable configuration lookup.
-    Plan 6.2 must combine this result with owned-resource authorization before
-    returning the runner's ToolDecision. Actual data/output guards remain 6.3.
+    OwnedToolPolicy combines this result with execution scope and owned metadata
+    before returning ToolDecision. Actual data/output guards remain 6.3.
     """
 
     def __init__(self, configuration: ToolPolicyConfiguration):
@@ -44,7 +49,7 @@ class PolicyRules:
             reason = "denied"
         else:
             try:
-                arguments = arguments_type.model_validate_json(proposal.raw_arguments, strict=True)
+                arguments = parse_tool_arguments(proposal)
             except ValidationError:
                 reason = "invalid_arguments"
             else:
