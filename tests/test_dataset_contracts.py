@@ -238,7 +238,7 @@ def test_approved_operations_methods_and_fixed_error_codes():
 
 
 def test_existing_runner_dataset_summary_remains_compatible():
-    from statistics_agent.agent.statistics import DatasetSummary
+    from statistics_agent.contracts.agent import DatasetSummary
 
     value = metadata()
     summary = DatasetSummary(

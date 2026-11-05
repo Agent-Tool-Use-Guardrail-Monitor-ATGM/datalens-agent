@@ -6,7 +6,7 @@ import json
 import httpx
 import pytest
 
-from test_statistics_agent import create
+from support.agent import create
 
 FINAL = "finalize_statistics"
 
@@ -14,10 +14,11 @@ FINAL = "finalize_statistics"
 def transcript(
     *, invalid=False, mixed=False, unsupported=False, access=True, more_calculations=False
 ):
-    session, dataset, captured, executed, sink, _ = create(access=access)
-    original = session._adapter._transport.handler
+    session, dataset, captured, executed, sink, _ = create(
+        access=access, response_handler=lambda request, original: handler(request, original)
+    )
 
-    def handler(request):
+    def handler(request, original):
         data = json.loads(request.content)
         definitions = {tool["function"]["name"]: tool["function"] for tool in data["tools"]}
         assert FINAL in definitions, "No distinct final-answer channel is offered to the model"
@@ -101,7 +102,6 @@ def transcript(
             },
         )
 
-    session._adapter._transport = httpx.MockTransport(handler)
     return session, dataset, captured, executed, sink
 
 

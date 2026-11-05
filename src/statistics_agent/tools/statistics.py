@@ -5,7 +5,7 @@ from functools import partial
 
 from pydantic import ValidationError
 
-from statistics_agent.agent.statistics import ToolBinding
+from statistics_agent.agent.tool_schema import ToolBinding
 from statistics_agent.contracts.agent import AgentContext, ToolProposal, ToolResult
 from statistics_agent.contracts.datasets import (
     AggregateStatisticsArguments,

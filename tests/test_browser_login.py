@@ -21,9 +21,8 @@ from statistics_agent.persistence.auth import AuthStore
 from statistics_agent.persistence.database import Database
 from statistics_agent.persistence.migrate import execute
 from statistics_agent.persistence.models import BrowserSession, LoginAttempt
-from test_auth_storage import run
-from test_auth_storage import settings as settings
-from test_token_encryption import keyring
+from support.crypto import keyring
+from support.database import run
 
 pytestmark = [pytest.mark.browser, pytest.mark.postgres]
 ORIGIN = "http://localhost:18089"
@@ -31,12 +30,12 @@ ISSUER = "http://localhost:18081/realms/browser-test"
 
 
 @pytest.fixture
-def browser_app(settings, request):
+def browser_app(auth_storage_settings, request):
     if os.environ.get("AUTH_BROWSER_TESTS") != "1":
         if os.environ.get("CI"):
             pytest.fail("CI must enable AUTH_BROWSER_TESTS; browser login cannot be skipped")
         pytest.skip("Enable AUTH_BROWSER_TESTS with the disposable Keycloak fixture")
-    run(execute(settings, "upgrade"))
+    run(execute(auth_storage_settings, "upgrade"))
     auth = AuthSettings(
         app_env="test",
         issuer=getattr(request, "param", ISSUER),
@@ -50,7 +49,9 @@ def browser_app(settings, request):
         update={"client_secret": SecretStr("synthetic-browser-client-secret")}
     )
     output = io.StringIO()
-    app = create_app(settings, auth_settings=auth, auth_secrets=secrets, log_stream=output)
+    app = create_app(
+        auth_storage_settings, auth_settings=auth, auth_secrets=secrets, log_stream=output
+    )
     app.state.test_keys = secrets
     server = uvicorn.Server(
         uvicorn.Config(
@@ -76,7 +77,7 @@ def browser_app(settings, request):
         assert not thread.is_alive(), "Isolated agent test server did not stop"
 
         async def cleanup():
-            database = Database(settings)
+            database = Database(auth_storage_settings)
             try:
                 async with database.session() as session:
                     for model in (BrowserSession, LoginAttempt):
@@ -193,7 +194,9 @@ def test_browser_login_success_or_safe_denial(browser_app, scenario):
 @pytest.mark.parametrize(
     "browser_app", ["http://localhost:18081/realms/refresh-test"], indirect=True
 )
-def test_real_refresh_keeps_cookie_and_logout_invalidates_provider_session(browser_app, settings):
+def test_real_refresh_keeps_cookie_and_logout_invalidates_provider_session(
+    browser_app, auth_storage_settings
+):
     app, _output = browser_app
     with ThreadPoolExecutor(max_workers=1) as database_thread, sync_playwright() as playwright:
         browser = playwright.chromium.launch(args=["--no-proxy-server"])
@@ -214,7 +217,7 @@ def test_real_refresh_keeps_cookie_and_logout_invalidates_provider_session(brows
             proof = first.json()["csrf_token"]
 
             async def stored_session():
-                database = Database(settings)
+                database = Database(auth_storage_settings)
                 try:
                     store = AuthStore(
                         database, app.state.auth_settings, TokenEncryption(app.state.test_keys)

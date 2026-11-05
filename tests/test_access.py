@@ -1,11 +1,8 @@
 """Protected requests use real encrypted PostgreSQL state and RSA-signed JWTs."""
 
-import io
-from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-import httpx
 import jwt.api_jwt
 import pytest
 from fastapi import Depends, HTTPException
@@ -13,67 +10,29 @@ from pydantic import SecretStr
 from sqlalchemy import Column, MetaData, String, Table, insert, select, update
 from sqlalchemy.exc import OperationalError
 
-from statistics_agent.api.access import require_admin, require_user
-from statistics_agent.app import create_app
+from statistics_agent.api.access import require_user
 from statistics_agent.contracts.auth import AuthorizedPrincipal
-from statistics_agent.contracts.common import AuthenticatedPrincipal
-from statistics_agent.persistence.auth import Credentials
+from statistics_agent.contracts.sessions import Credentials
 from statistics_agent.persistence.models import BrowserSession
 from statistics_agent.persistence.ownership import owner_filter
-from test_auth_storage import run, storage
-from test_auth_storage import settings as settings
-from test_oidc_provider import SyntheticProvider
+from support.auth import SyntheticProvider, application, headers, new_session
+from support.database import run
 
 pytestmark = pytest.mark.postgres
 
 
-@asynccontextmanager
-async def application(settings):
-    async with storage(settings) as (database, store, ring):
-        source = SyntheticProvider()
-        output = io.StringIO()
-        app = create_app(
-            settings,
-            auth_settings=source.settings,
-            auth_secrets=ring,
-            oidc_transport=httpx.MockTransport(source.handle),
-            log_stream=output,
-        )
-
-        @app.get("/test/admin")
-        async def admin(principal: Annotated[AuthorizedPrincipal, Depends(require_admin)]):
-            return {"subject": principal.subject}
-
-        @app.post("/test/write")
-        async def write(principal: Annotated[AuthorizedPrincipal, Depends(require_user)]):
-            return {"subject": principal.subject}
-
-        async with (
-            app.router.lifespan_context(app),
-            httpx.AsyncClient(
-                transport=httpx.ASGITransport(app),
-                base_url=source.settings.public_origin,
-            ) as client,
-        ):
-            app.state.auth_store = store
-            yield app, client, source, store, database, output
-
-
-async def new_session(store, source, *, changes=None, subject="synthetic-user", token=None):
-    token = token or source.token(changes=changes)
-    return await store.create_session(
-        AuthenticatedPrincipal(issuer=source.settings.issuer, subject=subject),
-        Credentials(SecretStr(token), SecretStr("private-refresh-token")),
-    )
-
-
-def headers(created):
-    return {"Cookie": "agent-session-dev=" + created.cookie.get_secret_value()}
-
-
-def test_me_uses_signed_roles_and_offline_cache_without_introspection_or_secret_leaks(settings):
+def test_me_uses_signed_roles_and_offline_cache_without_introspection_or_secret_leaks(
+    auth_storage_settings,
+):
     async def exercise():
-        async with application(settings) as (_, client, source, store, database, output):
+        async with application(auth_storage_settings) as (
+            _,
+            client,
+            source,
+            store,
+            database,
+            output,
+        ):
             created = await new_session(
                 store, source, changes={"resource_access": {"agent-api": {"roles": ["admin"]}}}
             )
@@ -131,9 +90,16 @@ def test_me_uses_signed_roles_and_offline_cache_without_introspection_or_secret_
         ("db-unavailable", 503),
     ],
 )
-def test_bad_session_token_or_storage_never_authorizes(settings, fault, status):
+def test_bad_session_token_or_storage_never_authorizes(auth_storage_settings, fault, status):
     async def exercise():
-        async with application(settings) as (app, client, source, store, database, output):
+        async with application(auth_storage_settings) as (
+            app,
+            client,
+            source,
+            store,
+            database,
+            output,
+        ):
             now = int(datetime.now(UTC).timestamp())
             changed = {
                 "expired-token": {"iat": now - 301, "exp": now - 1},
@@ -224,9 +190,9 @@ def test_bad_session_token_or_storage_never_authorizes(settings, fault, status):
         "other-session",
     ],
 )
-def test_unsafe_requests_require_exact_origin_and_session_bound_csrf(settings, fault):
+def test_unsafe_requests_require_exact_origin_and_session_bound_csrf(auth_storage_settings, fault):
     async def exercise():
-        async with application(settings) as (_, client, source, store, _, _output):
+        async with application(auth_storage_settings) as (_, client, source, store, _, _output):
             created = await new_session(store, source)
             status = await client.get("/auth/me", headers=headers(created))
             proof = status.json()["csrf_token"]
@@ -270,9 +236,11 @@ def test_unsafe_requests_require_exact_origin_and_session_bound_csrf(settings, f
     run(exercise())
 
 
-def test_role_changes_take_effect_at_fresh_token_or_expiry_without_refresh(settings, monkeypatch):
+def test_role_changes_take_effect_at_fresh_token_or_expiry_without_refresh(
+    auth_storage_settings, monkeypatch
+):
     async def exercise():
-        async with application(settings) as (_, client, source, store, _, _output):
+        async with application(auth_storage_settings) as (_, client, source, store, _, _output):
             created = await new_session(
                 store, source, changes={"resource_access": {"agent-api": {"roles": ["admin"]}}}
             )
@@ -303,9 +271,9 @@ def test_role_changes_take_effect_at_fresh_token_or_expiry_without_refresh(setti
     run(exercise())
 
 
-def test_required_key_fetch_failures_and_local_revocation_race_fail_closed(settings):
+def test_required_key_fetch_failures_and_local_revocation_race_fail_closed(auth_storage_settings):
     async def exercise():
-        async with application(settings) as (app, client, source, store, _, _output):
+        async with application(auth_storage_settings) as (app, client, source, store, _, _output):
             created = await new_session(store, source)
             source.offline = True
             assert (await client.get("/auth/me", headers=headers(created))).status_code == 503
@@ -330,9 +298,16 @@ def test_required_key_fetch_failures_and_local_revocation_race_fail_closed(setti
     run(exercise())
 
 
-def test_owner_filter_enforces_both_issuer_and_subject_even_for_admin(settings):
+def test_owner_filter_enforces_both_issuer_and_subject_even_for_admin(auth_storage_settings):
     async def exercise():
-        async with application(settings) as (app, client, source, store, database, _output):
+        async with application(auth_storage_settings) as (
+            app,
+            client,
+            source,
+            store,
+            database,
+            _output,
+        ):
             table = Table(
                 "owned_probe",
                 MetaData(),
@@ -405,9 +380,9 @@ def test_owner_filter_enforces_both_issuer_and_subject_even_for_admin(settings):
     run(exercise())
 
 
-def test_protected_request_key_rollover_and_unknown_kid_during_outage(settings):
+def test_protected_request_key_rollover_and_unknown_kid_during_outage(auth_storage_settings):
     async def exercise():
-        async with application(settings) as (app, client, source, store, _, _output):
+        async with application(auth_storage_settings) as (app, client, source, store, _, _output):
             original = await new_session(store, source)
             assert (await client.get("/auth/me", headers=headers(original))).status_code == 200
             source.key = SyntheticProvider().key

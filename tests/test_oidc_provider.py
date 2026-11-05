@@ -1,105 +1,18 @@
 """Real RSA signatures with controlled provider failures; no unsigned JWT mocks."""
 
 import asyncio
-import json
 from dataclasses import replace
 from datetime import UTC, datetime
 
 import httpx
 import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic import SecretStr
 
 from statistics_agent.contracts.auth import AuthFailureCode
 from statistics_agent.core.oidc import AuthenticationError, OidcProvider
-from statistics_agent.persistence.auth import ConsumedLogin
-from test_auth_storage import auth_settings
-from test_token_encryption import keyring
-
-
-class SyntheticProvider:
-    def __init__(self):
-        self.settings = auth_settings()
-        self.key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        self.calls = []
-        self.offline = False
-        self.changes = {}
-        self.result_changes = {}
-        self.kid = "first"
-        self.jwks_changes = None
-        self.attempt = ConsumedLogin(
-            __import__("uuid").uuid4(),
-            self.settings.issuer,
-            "/",
-            SecretStr("synthetic-nonce"),
-            SecretStr("synthetic-pkce-verifier"),
-        )
-
-    def token(self, access=True, changes=None, headers=None):
-        now = int(datetime.now(UTC).timestamp())
-        claims = {
-            "iss": self.settings.issuer,
-            "sub": "synthetic-user",
-            "aud": "agent-api",
-            "iat": now,
-            "exp": now + 300,
-            "azp": "agent-api",
-        }
-        if access:
-            claims.update(
-                typ="Bearer",
-                email_verified=True,
-                resource_access={"agent-api": {"roles": ["user"]}},
-            )
-        else:
-            claims.update(nonce=self.attempt.nonce.get_secret_value())
-        claims.update(changes or {})
-        return jwt.encode(claims, self.key, algorithm="RS256", headers=headers or {"kid": self.kid})
-
-    def handle(self, request):
-        self.calls.append(request)
-        if self.offline:
-            raise httpx.ConnectError("private-provider-diagnostic", request=request)
-        if request.url.path.endswith("openid-configuration"):
-            suffixes = {
-                "authorization_endpoint": "/auth",
-                "token_endpoint": "/token",
-                "introspection_endpoint": "/token/introspect",
-                "jwks_uri": "/certs",
-                "end_session_endpoint": "/logout",
-            }
-            return httpx.Response(
-                200,
-                json={
-                    "issuer": self.settings.issuer,
-                    "id_token_signing_alg_values_supported": ["RS256"],
-                    "authorization_response_iss_parameter_supported": True,
-                    **{
-                        name: self.settings.issuer + "/protocol/openid-connect" + suffix
-                        for name, suffix in suffixes.items()
-                    },
-                },
-            )
-        if request.url.path.endswith("certs"):
-            public = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(self.key.public_key()))
-            public.update(kid=self.kid, alg="RS256", use="sig")
-            return httpx.Response(200, json=self.jwks_changes or {"keys": [public]})
-        if request.url.path.endswith("token"):
-            return httpx.Response(
-                200,
-                json={
-                    "token_type": "Bearer",
-                    "access_token": self.token(changes=self.changes),
-                    "id_token": self.token(False),
-                    "refresh_token": "synthetic-refresh-token",
-                    **self.result_changes,
-                },
-            )
-        raise AssertionError("Unexpected endpoint")
-
-    def client(self):
-        return OidcProvider(self.settings, keyring(), transport=httpx.MockTransport(self.handle))
+from support.auth import SyntheticProvider
+from support.crypto import keyring
 
 
 def test_exchange_validates_signatures_and_sends_only_fixed_endpoint_credentials():

@@ -9,7 +9,8 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from statistics_agent.agent.provider import AdapterError, EvidenceDeliveryError, ModelAdapter
+from statistics_agent.agent.errors import AdapterError, EvidenceDeliveryError
+from statistics_agent.agent.provider import ModelAdapter
 from statistics_agent.contracts.agent import (
     AgentContext,
     AgentMessage,

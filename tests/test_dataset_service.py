@@ -2,7 +2,6 @@
 
 import asyncio
 import threading
-from contextlib import asynccontextmanager
 from uuid import uuid4
 
 import pytest
@@ -10,27 +9,19 @@ from sqlalchemy import event, func, select
 
 from statistics_agent.contracts.datasets import DatasetLimits
 from statistics_agent.datasets.csv import CsvValidationError
-from statistics_agent.datasets.execution import DatasetParser, DatasetParserBusyError
+from statistics_agent.datasets.execution import DatasetParserBusyError
 from statistics_agent.datasets.service import DatasetIntegrityError, DatasetService
 from statistics_agent.persistence.datasets import DatasetNotFoundError
 from statistics_agent.persistence.models import Dataset, DatasetArtifact, DatasetContent
-from test_dataset_storage import COLUMNS, CONTENT, owner, storage
-from test_migrations import run
-from test_migrations import settings as settings
+from support.database import run
+from support.datasets import COLUMNS, CONTENT, application, owner
 
 pytestmark = pytest.mark.postgres
 
 
-@asynccontextmanager
-async def application(settings, *, limits=None):
-    async with storage(settings) as (database, store):
-        async with DatasetParser(workers=1) as parser:
-            yield database, store, parser, DatasetService(database, parser=parser, limits=limits)
-
-
-def test_ingestion_derives_metadata_and_roundtrips_owned_preview_and_content(settings):
+def test_ingestion_derives_metadata_and_roundtrips_owned_preview_and_content(migration_settings):
     async def exercise():
-        async with application(settings) as (database, store, parser, service):
+        async with application(migration_settings) as (database, store, parser, service):
             principal = owner()
             raw = b'\xef\xbb\xbf price ,label\r\n 2 ,apple\r\n,""\r\n6,pear\r\n'
             metadata = await service.ingest(principal, filename="data.csv", content=raw)
@@ -51,9 +42,9 @@ def test_ingestion_derives_metadata_and_roundtrips_owned_preview_and_content(set
 
 
 @pytest.mark.parametrize("raw", [b'a\n"unclosed', b"a,b\n1", b"a\n\xff", b"a\nNaN"])
-def test_rejected_ingestion_creates_no_partial_rows_and_service_recovers(settings, raw):
+def test_rejected_ingestion_creates_no_partial_rows_and_service_recovers(migration_settings, raw):
     async def exercise():
-        async with application(settings) as (database, _, _, service):
+        async with application(migration_settings) as (database, _, _, service):
             principal = owner()
             with pytest.raises(CsvValidationError):
                 await service.ingest(principal, filename="private.csv", content=raw)
@@ -65,10 +56,10 @@ def test_rejected_ingestion_creates_no_partial_rows_and_service_recovers(setting
     run(exercise())
 
 
-def test_lowered_limits_and_preview_cap_apply_to_real_ingestion(settings):
+def test_lowered_limits_and_preview_cap_apply_to_real_ingestion(migration_settings):
     async def exercise():
         limits = DatasetLimits(max_rows=2, max_preview_rows=1)
-        async with application(settings, limits=limits) as (_, _, _, service):
+        async with application(migration_settings, limits=limits) as (_, _, _, service):
             principal = owner()
             with pytest.raises(CsvValidationError):
                 await service.ingest(principal, filename="too-many.csv", content=CONTENT)
@@ -89,10 +80,10 @@ def test_lowered_limits_and_preview_cap_apply_to_real_ingestion(settings):
     ],
 )
 def test_cross_owner_access_is_denied_before_parsing_including_admins(
-    settings, monkeypatch, identity
+    migration_settings, monkeypatch, identity
 ):
     async def exercise():
-        async with application(settings) as (_, _, parser, service):
+        async with application(migration_settings) as (_, _, parser, service):
             principal, other = owner(), owner(**identity)
             value = await service.ingest(principal, filename="data.csv", content=CONTENT)
 
@@ -110,9 +101,9 @@ def test_cross_owner_access_is_denied_before_parsing_including_admins(
     run(exercise())
 
 
-def test_owned_delete_removes_raw_bytes_artifacts_and_future_access(settings):
+def test_owned_delete_removes_raw_bytes_artifacts_and_future_access(migration_settings):
     async def exercise():
-        async with application(settings) as (_, store, _, service):
+        async with application(migration_settings) as (_, store, _, service):
             principal = owner()
             value = await service.ingest(principal, filename="data.csv", content=CONTENT)
             artifact = await store.create_artifact(principal, value.dataset_id, {"mean": 4})
@@ -132,9 +123,9 @@ def test_owned_delete_removes_raw_bytes_artifacts_and_future_access(settings):
     run(exercise())
 
 
-def test_valid_parse_followed_by_write_failure_rolls_back_dataset_metadata(settings):
+def test_valid_parse_followed_by_write_failure_rolls_back_dataset_metadata(migration_settings):
     async def exercise():
-        async with application(settings) as (database, _, _, service):
+        async with application(migration_settings) as (database, _, _, service):
             principal = owner()
 
             def fail(connection, cursor, statement, parameters, context, many):
@@ -152,9 +143,9 @@ def test_valid_parse_followed_by_write_failure_rolls_back_dataset_metadata(setti
     run(exercise())
 
 
-def test_loading_detects_stored_metadata_that_disagrees_with_actual_csv(settings):
+def test_loading_detects_stored_metadata_that_disagrees_with_actual_csv(migration_settings):
     async def exercise():
-        async with application(settings) as (_, store, _, service):
+        async with application(migration_settings) as (_, store, _, service):
             principal = owner()
             value = await store.create(
                 principal,
@@ -169,9 +160,9 @@ def test_loading_detects_stored_metadata_that_disagrees_with_actual_csv(settings
     run(exercise())
 
 
-def test_deletion_during_parse_prevents_successful_loaded_result(settings, monkeypatch):
+def test_deletion_during_parse_prevents_successful_loaded_result(migration_settings, monkeypatch):
     async def exercise():
-        async with application(settings) as (_, _, parser, service):
+        async with application(migration_settings) as (_, _, parser, service):
             principal = owner()
             value = await service.ingest(principal, filename="data.csv", content=CONTENT)
             original = parser.parse
@@ -188,9 +179,9 @@ def test_deletion_during_parse_prevents_successful_loaded_result(settings, monke
     run(exercise())
 
 
-def test_service_keyset_listing_is_bounded_and_owned(settings):
+def test_service_keyset_listing_is_bounded_and_owned(migration_settings):
     async def exercise():
-        async with application(settings) as (_, _, _, service):
+        async with application(migration_settings) as (_, _, _, service):
             principal = owner()
             values = [
                 await service.ingest(principal, filename="data.csv", content=CONTENT)
@@ -206,7 +197,7 @@ def test_service_keyset_listing_is_bounded_and_owned(settings):
     run(exercise())
 
 
-def test_busy_or_cancelled_during_parse_ingestion_does_not_write(settings, monkeypatch):
+def test_busy_or_cancelled_during_parse_ingestion_does_not_write(migration_settings, monkeypatch):
     started, release = threading.Event(), threading.Event()
     from statistics_agent.datasets.csv import parse_csv
 
@@ -218,7 +209,7 @@ def test_busy_or_cancelled_during_parse_ingestion_does_not_write(settings, monke
     monkeypatch.setattr("statistics_agent.datasets.execution.parse_csv", controlled)
 
     async def exercise():
-        async with application(settings) as (database, _, parser, service):
+        async with application(migration_settings) as (database, _, parser, service):
             principal = owner()
             task = asyncio.create_task(
                 service.ingest(principal, filename="data.csv", content=CONTENT)

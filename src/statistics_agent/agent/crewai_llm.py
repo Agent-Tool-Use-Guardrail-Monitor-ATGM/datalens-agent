@@ -7,7 +7,8 @@ from uuid import uuid4
 
 from pydantic import PrivateAttr
 
-from statistics_agent.agent.provider import AdapterError, ModelAdapter
+from statistics_agent.agent.errors import AdapterError
+from statistics_agent.agent.provider import ModelAdapter
 from statistics_agent.contracts.agent import (
     AgentContext,
     AgentMessage,
@@ -20,7 +21,8 @@ from statistics_agent.contracts.agent import (
 # Our explicit Pydantic loaders own secrets; no implicit framework environment load.
 os.environ["PYTHON_DOTENV_DISABLED"] = "1"
 os.environ["OTEL_SDK_DISABLED"] = "true"
-from crewai import Agent, BaseLLM  # noqa: E402, F401
+from crewai import Agent as Agent  # noqa: E402
+from crewai import BaseLLM
 
 
 class ToolDispatchRequired(AdapterError):

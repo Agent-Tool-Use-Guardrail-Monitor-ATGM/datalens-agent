@@ -11,16 +11,15 @@ from statistics_agent.api.access import require_user
 from statistics_agent.contracts.auth import AuthorizedPrincipal
 from statistics_agent.core.model_settings import ModelSettings
 from statistics_agent.verification.provider_check import check_provider
-from test_access import application, headers, new_session
-from test_auth_storage import run
-from test_auth_storage import settings as settings
+from support.auth import application, headers, new_session
+from support.database import run
 
 pytestmark = pytest.mark.postgres
 
 
-def test_protected_provider_check_requires_real_session_and_csrf(settings):
+def test_protected_provider_check_requires_real_session_and_csrf(auth_storage_settings):
     async def exercise():
-        async with application(settings) as (app, client, source, store, _, output):
+        async with application(auth_storage_settings) as (app, client, source, store, _, output):
             fixture = ProviderFixture()
 
             @app.post("/test/provider-check")

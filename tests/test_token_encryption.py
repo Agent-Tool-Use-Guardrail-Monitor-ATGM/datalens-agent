@@ -7,23 +7,12 @@ import pytest
 from cryptography.fernet import Fernet
 from pydantic import SecretStr
 
-from statistics_agent.core.auth_secrets import AuthSecrets, EncryptionKey
 from statistics_agent.core.token_encryption import (
     SecretContext,
     SecretEnvelopeError,
     TokenEncryption,
 )
-
-
-def keyring(active="first", keys=None):
-    keys = keys or {"first": Fernet.generate_key().decode()}
-    return AuthSecrets(
-        client_secret=SecretStr("synthetic-client-secret"),
-        active_key_id=active,
-        keys=tuple(
-            EncryptionKey(key_id=name, material=SecretStr(value)) for name, value in keys.items()
-        ),
-    )
+from support.crypto import keyring
 
 
 def test_roundtrip_restart_and_randomized_ciphertext():

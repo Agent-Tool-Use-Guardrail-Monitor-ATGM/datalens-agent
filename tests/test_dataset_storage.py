@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -12,8 +11,7 @@ from alembic.runtime.migration import MigrationContext
 from sqlalchemy import event, func, select, text, update
 from sqlalchemy.exc import IntegrityError
 
-from statistics_agent.contracts.auth import AuthorizedPrincipal
-from statistics_agent.contracts.datasets import DatasetColumn, DatasetLimits, StatisticsLimits
+from statistics_agent.contracts.datasets import DatasetLimits, StatisticsLimits
 from statistics_agent.persistence.datasets import DatasetNotFoundError, DatasetStore, artifact_json
 from statistics_agent.persistence.models import (
     Base,
@@ -22,50 +20,14 @@ from statistics_agent.persistence.models import (
     DatasetContent,
     LoginAttempt,
 )
-from test_migrations import apply, run, sandbox
-from test_migrations import settings as settings
-
-CONTENT = b"price\n2\n4\n6\n"
-COLUMNS = (DatasetColumn(name="price", kind="numeric", non_missing_count=3, missing_count=0),)
-
-
-def owner(**updates):
-    return AuthorizedPrincipal(
-        **(
-            {
-                "issuer": "https://identity.example/realms/datalens",
-                "subject": "analyst",
-                "auth_session_ref": uuid4(),
-                "roles": ["user"],
-                "email_verified": True,
-            }
-            | updates
-        )
-    )
+from support.database import apply, run, sandbox
+from support.datasets import COLUMNS, CONTENT, owner, storage
 
 
 async def create(store, principal):
     return await store.create(
         principal, filename="private.csv", content=CONTENT, row_count=3, columns=COLUMNS
     )
-
-
-@asynccontextmanager
-async def storage(settings):
-    async with sandbox(settings) as (database, schema, config):
-        await apply(database, schema, config, "upgrade", "head")
-
-        def checkout(connection, record, proxy):
-            cursor = connection.cursor()
-            cursor.execute(f"SET search_path TO {schema}")
-            connection.commit()
-            cursor.close()
-
-        event.listen(database.engine.sync_engine, "checkout", checkout)
-        try:
-            yield database, DatasetStore(database)
-        finally:
-            event.remove(database.engine.sync_engine, "checkout", checkout)
 
 
 @pytest.mark.parametrize(
@@ -100,9 +62,9 @@ def test_artifact_serialization_bounds_depth_cycles_and_utf8_bytes():
 
 @pytest.mark.postgres
 class TestDatasetStorage:
-    def test_committed_roundtrip_and_metadata_reads_do_not_load_raw_data(self, settings):
+    def test_committed_roundtrip_and_metadata_reads_do_not_load_raw_data(self, migration_settings):
         async def exercise():
-            async with storage(settings) as (database, store):
+            async with storage(migration_settings) as (database, store):
                 principal = owner()
                 created = await create(store, principal)
                 reopened = DatasetStore(database)
@@ -132,9 +94,11 @@ class TestDatasetStorage:
             {"subject": "admin", "roles": ["admin", "user"]},
         ],
     )
-    def test_owner_isolation_and_unknown_id_parity_including_admins(self, settings, other):
+    def test_owner_isolation_and_unknown_id_parity_including_admins(
+        self, migration_settings, other
+    ):
         async def exercise():
-            async with storage(settings) as (_, store):
+            async with storage(migration_settings) as (_, store):
                 principal, intruder = owner(), owner(**other)
                 value = await create(store, principal)
                 artifact = await store.create_artifact(principal, value.dataset_id, {"mean": 4})
@@ -160,10 +124,10 @@ class TestDatasetStorage:
         run(exercise())
 
     def test_artifact_bytes_checksum_and_numbers_roundtrip_without_jsonb_normalization(
-        self, settings
+        self, migration_settings
     ):
         async def exercise():
-            async with storage(settings) as (database, store):
+            async with storage(migration_settings) as (database, store):
                 principal = owner()
                 value = await create(store, principal)
                 payload = {"mean": 4.0, "negative_zero": -0.0, "large": 1e20, "unit": "\u20ac"}
@@ -185,9 +149,9 @@ class TestDatasetStorage:
 
         run(exercise())
 
-    def test_bounded_keyset_listing_and_distinct_duplicate_uploads(self, settings):
+    def test_bounded_keyset_listing_and_distinct_duplicate_uploads(self, migration_settings):
         async def exercise():
-            async with storage(settings) as (_, store):
+            async with storage(migration_settings) as (_, store):
                 principal = owner()
                 values = [await create(store, principal) for _ in range(3)]
                 expected = sorted(v.dataset_id for v in values)
@@ -202,9 +166,11 @@ class TestDatasetStorage:
 
         run(exercise())
 
-    def test_failed_content_insert_rolls_back_metadata_and_releases_connection(self, settings):
+    def test_failed_content_insert_rolls_back_metadata_and_releases_connection(
+        self, migration_settings
+    ):
         async def exercise():
-            async with storage(settings) as (database, store):
+            async with storage(migration_settings) as (database, store):
                 principal = owner()
 
                 def fail(connection, cursor, statement, parameters, context, many):
@@ -226,9 +192,9 @@ class TestDatasetStorage:
 
         run(exercise())
 
-    def test_parent_deletion_cascades_raw_content_and_artifacts(self, settings):
+    def test_parent_deletion_cascades_raw_content_and_artifacts(self, migration_settings):
         async def exercise():
-            async with storage(settings) as (database, store):
+            async with storage(migration_settings) as (database, store):
                 principal = owner()
                 value = await create(store, principal)
                 artifact = await store.create_artifact(principal, value.dataset_id, {"mean": 4})
@@ -242,9 +208,9 @@ class TestDatasetStorage:
 
         run(exercise())
 
-    def test_lowered_limits_are_applied_before_writes(self, settings):
+    def test_lowered_limits_are_applied_before_writes(self, migration_settings):
         async def exercise():
-            async with storage(settings) as (database, store):
+            async with storage(migration_settings) as (database, store):
                 principal = owner()
                 bounded = DatasetStore(database, DatasetLimits(max_upload_bytes=1))
                 with pytest.raises(ValueError):
@@ -266,9 +232,9 @@ class TestDatasetStorage:
 
         run(exercise())
 
-    def test_integrity_mismatches_fail_without_returning_corrupted_data(self, settings):
+    def test_integrity_mismatches_fail_without_returning_corrupted_data(self, migration_settings):
         async def exercise():
-            async with storage(settings) as (database, store):
+            async with storage(migration_settings) as (database, store):
                 principal = owner()
                 value = await create(store, principal)
                 artifact = await store.create_artifact(principal, value.dataset_id, {"mean": 4})
@@ -283,9 +249,11 @@ class TestDatasetStorage:
 
         run(exercise())
 
-    def test_database_foreign_keys_and_payload_checks_enforce_storage_boundaries(self, settings):
+    def test_database_foreign_keys_and_payload_checks_enforce_storage_boundaries(
+        self, migration_settings
+    ):
         async def exercise():
-            async with storage(settings) as (database, store):
+            async with storage(migration_settings) as (database, store):
                 principal = owner()
                 value = await create(store, principal)
                 artifact = await store.create_artifact(principal, value.dataset_id, {"mean": 4})
@@ -298,9 +266,9 @@ class TestDatasetStorage:
 
         run(exercise())
 
-    def test_migrated_schema_matches_models(self, settings):
+    def test_migrated_schema_matches_models(self, migration_settings):
         async def exercise():
-            async with storage(settings) as (database, _):
+            async with storage(migration_settings) as (database, _):
                 async with database.engine.connect() as connection:
 
                     def differences(sync):
@@ -310,9 +278,11 @@ class TestDatasetStorage:
 
         run(exercise())
 
-    def test_additive_upgrade_and_test_rollback_preserve_existing_auth_rows(self, settings):
+    def test_additive_upgrade_and_test_rollback_preserve_existing_auth_rows(
+        self, migration_settings
+    ):
         async def exercise():
-            async with sandbox(settings) as (database, schema, config):
+            async with sandbox(migration_settings) as (database, schema, config):
                 await apply(database, schema, config, "upgrade", "0003_refresh_claim")
                 identifier = uuid4()
                 now = datetime.now(UTC)

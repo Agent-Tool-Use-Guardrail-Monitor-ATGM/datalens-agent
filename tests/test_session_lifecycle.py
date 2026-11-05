@@ -17,18 +17,17 @@ from statistics_agent.api.access import csrf_token
 from statistics_agent.app import create_app
 from statistics_agent.contracts.auth import SessionOwner
 from statistics_agent.contracts.common import AuthenticatedPrincipal
+from statistics_agent.contracts.sessions import Credentials
 from statistics_agent.core.oidc import AuthenticationError, OidcProvider
 from statistics_agent.core.session_lifecycle import SessionLifecycle
 from statistics_agent.core.token_encryption import TokenEncryption
-from statistics_agent.persistence.auth import AuthStore, Credentials
+from statistics_agent.persistence.auth import AuthStore
 from statistics_agent.persistence.database import Database
 from statistics_agent.persistence.models import BrowserSession
 from statistics_agent.persistence.schema import migration_config
-from test_access import application, headers, new_session
-from test_auth_storage import run, storage
-from test_auth_storage import settings as settings
-from test_oidc_provider import SyntheticProvider
-from test_token_encryption import keyring
+from support.auth import SyntheticProvider, application, headers, new_session, storage
+from support.crypto import keyring
+from support.database import run
 
 pytestmark = pytest.mark.postgres
 
@@ -83,11 +82,11 @@ def expired(source, **changes):
 
 
 @asynccontextmanager
-async def replicas(settings, source):
-    async with storage(settings) as (database, store, ring):
+async def replicas(auth_storage_settings, source):
+    async with storage(auth_storage_settings) as (database, store, ring):
         async with database.session() as session:
             schema = await session.scalar(text("SELECT current_schema()"))
-        second_database = Database(settings)
+        second_database = Database(auth_storage_settings)
 
         def set_schema(connection, record, proxy):
             cursor = connection.cursor()
@@ -117,10 +116,10 @@ async def replicas(settings, source):
             await second_database.close()
 
 
-def test_two_replicas_exchange_once_and_keep_cookie_with_fresh_roles(settings):
+def test_two_replicas_exchange_once_and_keep_cookie_with_fresh_roles(auth_storage_settings):
     async def exercise():
         source = RefreshSource()
-        async with replicas(settings, source) as (_, store, other, lifecycle):
+        async with replicas(auth_storage_settings, source) as (_, store, other, lifecycle):
             created = await new_session(store, source, token=expired(source))
             results = await asyncio.gather(
                 *(service.authorize(created.session) for service in lifecycle)
@@ -140,10 +139,12 @@ def test_two_replicas_exchange_once_and_keep_cookie_with_fresh_roles(settings):
 @pytest.mark.parametrize(
     "mode,status", [("reject", 401), ("outage", 503), ("wrong-owner", 401), ("no-role", 403)]
 )
-def test_rejected_unknown_or_invalid_replacement_revokes_without_retry(settings, mode, status):
+def test_rejected_unknown_or_invalid_replacement_revokes_without_retry(
+    auth_storage_settings, mode, status
+):
     async def exercise():
         source = RefreshSource(mode)
-        async with replicas(settings, source) as (_, store, _, lifecycle):
+        async with replicas(auth_storage_settings, source) as (_, store, _, lifecycle):
             created = await new_session(store, source, token=expired(source))
             with pytest.raises(AuthenticationError) as caught:
                 await lifecycle[0].authorize(created.session)
@@ -158,10 +159,10 @@ def test_rejected_unknown_or_invalid_replacement_revokes_without_retry(settings,
     run(exercise())
 
 
-def test_crashed_claim_expires_to_revocation_without_provider_reuse(settings):
+def test_crashed_claim_expires_to_revocation_without_provider_reuse(auth_storage_settings):
     async def exercise():
         source = RefreshSource()
-        async with replicas(settings, source) as (database, store, _, lifecycle):
+        async with replicas(auth_storage_settings, source) as (database, store, _, lifecycle):
             created = await new_session(store, source, token=expired(source))
             claim = await store.claim_refresh(created.session.session_id, 0, 1)
             assert claim.claim_id is not None
@@ -181,10 +182,10 @@ def test_crashed_claim_expires_to_revocation_without_provider_reuse(settings):
 
 
 @pytest.mark.parametrize("committed", [False, True], ids=["commit-failed", "commit-ack-lost"])
-def test_persistence_failure_after_rotation_revokes(settings, committed):
+def test_persistence_failure_after_rotation_revokes(auth_storage_settings, committed):
     async def exercise():
         source = RefreshSource()
-        async with replicas(settings, source) as (_, store, _, lifecycle):
+        async with replicas(auth_storage_settings, source) as (_, store, _, lifecycle):
             created = await new_session(store, source, token=expired(source))
             finish = store.finish_refresh
 
@@ -203,11 +204,13 @@ def test_persistence_failure_after_rotation_revokes(settings, committed):
 
 
 @pytest.mark.parametrize("interrupt", ["logout", "cancel", "timeout"])
-def test_logout_cancellation_or_timeout_cannot_resurrect_a_refresh(settings, interrupt):
+def test_logout_cancellation_or_timeout_cannot_resurrect_a_refresh(
+    auth_storage_settings, interrupt
+):
     async def exercise():
         source = RefreshSource()
         source.release = asyncio.Event()
-        async with replicas(settings, source) as (_, store, _, lifecycle):
+        async with replicas(auth_storage_settings, source) as (_, store, _, lifecycle):
             created = await new_session(store, source, token=expired(source))
             if interrupt == "timeout":
                 lifecycle[0].budget = 0.1
@@ -226,9 +229,9 @@ def test_logout_cancellation_or_timeout_cannot_resurrect_a_refresh(settings, int
     run(exercise())
 
 
-def test_logout_is_local_even_with_expired_token_and_provider_outage(settings):
+def test_logout_is_local_even_with_expired_token_and_provider_outage(auth_storage_settings):
     async def exercise():
-        async with application(settings) as (_, client, source, store, _, _output):
+        async with application(auth_storage_settings) as (_, client, source, store, _, _output):
             created = await store.create_session(
                 AuthenticatedPrincipal(issuer=source.settings.issuer, subject="synthetic-user"),
                 Credentials(
@@ -262,9 +265,9 @@ def test_logout_is_local_even_with_expired_token_and_provider_outage(settings):
 
 
 @pytest.mark.parametrize("fault", ["origin", "csrf", "duplicate"])
-def test_logout_rejects_csrf_before_revocation(settings, fault):
+def test_logout_rejects_csrf_before_revocation(auth_storage_settings, fault):
     async def exercise():
-        async with application(settings) as (_, client, source, store, _, _output):
+        async with application(auth_storage_settings) as (_, client, source, store, _, _output):
             created = await new_session(store, source)
             body = (await client.get("/auth/me", headers=headers(created))).json()
             supplied = list(headers(created).items()) + [
@@ -294,10 +297,12 @@ def test_logout_rejects_csrf_before_revocation(settings, fault):
         {"resource_access": {}},
     ],
 )
-def test_expired_invalid_identity_or_permissions_never_trigger_refresh(settings, change):
+def test_expired_invalid_identity_or_permissions_never_trigger_refresh(
+    auth_storage_settings, change
+):
     async def exercise():
         source = RefreshSource()
-        async with replicas(settings, source) as (_, store, _, lifecycle):
+        async with replicas(auth_storage_settings, source) as (_, store, _, lifecycle):
             created = await new_session(store, source, token=expired(source, **change))
             with pytest.raises(AuthenticationError):
                 await lifecycle[0].authorize(created.session)
@@ -306,10 +311,10 @@ def test_expired_invalid_identity_or_permissions_never_trigger_refresh(settings,
     run(exercise())
 
 
-def test_expired_user_token_cannot_refresh_to_repair_admin_permission(settings):
+def test_expired_user_token_cannot_refresh_to_repair_admin_permission(auth_storage_settings):
     async def exercise():
         source = RefreshSource()
-        async with replicas(settings, source) as (_, store, _, lifecycle):
+        async with replicas(auth_storage_settings, source) as (_, store, _, lifecycle):
             created = await new_session(store, source, token=expired(source))
             with pytest.raises(AuthenticationError) as caught:
                 await lifecycle[0].authorize(created.session, required_role="admin")
@@ -318,16 +323,16 @@ def test_expired_user_token_cannot_refresh_to_repair_admin_permission(settings):
     run(exercise())
 
 
-def test_two_api_instances_share_one_refresh_and_csrf_value(settings):
+def test_two_api_instances_share_one_refresh_and_csrf_value(auth_storage_settings):
     async def exercise():
         source = RefreshSource()
-        async with replicas(settings, source) as (_, store, other, _lifecycles):
+        async with replicas(auth_storage_settings, source) as (_, store, other, _lifecycles):
             created = await new_session(store, source, token=expired(source))
             async with AsyncExitStack() as stack:
                 clients = []
                 for local_store in (store, other):
                     app = create_app(
-                        settings,
+                        auth_storage_settings,
                         auth_settings=source.settings,
                         auth_secrets=keyring(),
                         oidc_transport=httpx.MockTransport(source.handle_async),
@@ -354,10 +359,10 @@ def test_two_api_instances_share_one_refresh_and_csrf_value(settings):
     run(exercise())
 
 
-def test_refresh_claim_downgrade_revokes_pending_sessions(settings):
+def test_refresh_claim_downgrade_revokes_pending_sessions(auth_storage_settings):
     async def exercise():
         source = RefreshSource()
-        async with replicas(settings, source) as (database, store, _, _lifecycles):
+        async with replicas(auth_storage_settings, source) as (database, store, _, _lifecycles):
             created = await new_session(store, source, token=expired(source))
             assert (await store.claim_refresh(created.session.session_id, 0, 30)).claim_id
             async with database.session() as session:
@@ -390,10 +395,12 @@ def test_refresh_claim_downgrade_revokes_pending_sessions(settings):
 
 
 @pytest.mark.parametrize("error_type", [OperationalError, ValueError])
-def test_claim_failure_revokes_without_exchanging_a_refresh_token(settings, error_type):
+def test_claim_failure_revokes_without_exchanging_a_refresh_token(
+    auth_storage_settings, error_type
+):
     async def exercise():
         source = RefreshSource()
-        async with replicas(settings, source) as (_, store, _, lifecycle):
+        async with replicas(auth_storage_settings, source) as (_, store, _, lifecycle):
             created = await new_session(store, source, token=expired(source))
             claim = store.claim_refresh
 
@@ -412,10 +419,10 @@ def test_claim_failure_revokes_without_exchanging_a_refresh_token(settings, erro
     run(exercise())
 
 
-def test_refreshed_role_removal_denies_admin_without_revoking_user_access(settings):
+def test_refreshed_role_removal_denies_admin_without_revoking_user_access(auth_storage_settings):
     async def exercise():
         source = RefreshSource()
-        async with replicas(settings, source) as (_, store, _, lifecycle):
+        async with replicas(auth_storage_settings, source) as (_, store, _, lifecycle):
             created = await new_session(
                 store,
                 source,

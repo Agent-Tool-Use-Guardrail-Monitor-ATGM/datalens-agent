@@ -33,3 +33,6 @@ secrets/
 *.log
 .DS_Store
 Thumbs.db
+
+skills-lock.json
+

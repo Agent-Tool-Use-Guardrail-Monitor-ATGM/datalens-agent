@@ -2,7 +2,6 @@
 
 import hashlib
 import secrets
-from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -11,6 +10,13 @@ from sqlalchemy import delete, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from statistics_agent.contracts.common import AuthenticatedPrincipal
+from statistics_agent.contracts.sessions import ConsumedLogin as ConsumedLogin
+from statistics_agent.contracts.sessions import Credentials as Credentials
+from statistics_agent.contracts.sessions import LoginStart as LoginStart
+from statistics_agent.contracts.sessions import LogoutSession as LogoutSession
+from statistics_agent.contracts.sessions import NewSession as NewSession
+from statistics_agent.contracts.sessions import RefreshClaim as RefreshClaim
+from statistics_agent.contracts.sessions import StoredSession as StoredSession
 from statistics_agent.core.auth import AuthSettings
 from statistics_agent.core.token_encryption import SecretContext, TokenEncryption
 from statistics_agent.persistence.database import Database
@@ -38,66 +44,6 @@ def instant(value: datetime | None) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("An aware timestamp is required")
     return value.astimezone(UTC)
-
-
-@dataclass(frozen=True)
-class LoginStart:
-    attempt_id: UUID
-    expires_at: datetime
-    state: SecretStr = field(repr=False)
-    browser_binding: SecretStr = field(repr=False)
-    nonce: SecretStr = field(repr=False)
-    verifier: SecretStr = field(repr=False)
-
-
-@dataclass(frozen=True)
-class ConsumedLogin:
-    attempt_id: UUID
-    issuer: str
-    return_target: str
-    nonce: SecretStr = field(repr=False)
-    verifier: SecretStr = field(repr=False)
-
-
-@dataclass(frozen=True)
-class Credentials:
-    """Already-verified provider credentials; storage does not authenticate JWTs."""
-
-    access_token: SecretStr = field(repr=False)
-    refresh_token: SecretStr = field(repr=False)
-    id_token: SecretStr | None = field(default=None, repr=False)
-
-
-@dataclass(frozen=True)
-class StoredSession:
-    session_id: UUID
-    issuer: str
-    subject: str
-    idle_expires_at: datetime
-    absolute_expires_at: datetime
-    refresh_version: int
-    credentials: Credentials = field(repr=False)
-
-
-@dataclass(frozen=True)
-class NewSession:
-    session: StoredSession
-    cookie: SecretStr = field(repr=False)
-
-
-@dataclass(frozen=True)
-class RefreshClaim:
-    session: StoredSession = field(repr=False)
-    claim_id: UUID | None
-    waiting: bool
-
-
-@dataclass(frozen=True)
-class LogoutSession:
-    session_id: UUID
-    issuer: str
-    subject: str
-    credentials: Credentials | None = field(repr=False)
 
 
 class AuthStore:
