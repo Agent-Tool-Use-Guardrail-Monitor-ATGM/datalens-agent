@@ -1095,3 +1095,38 @@ warnings. Python Ruff/format/pip and whitespace checks pass. No dependency,
 migration, numerical behavior, JWT/browser-auth or cloud change. No live LLM call.
 Disposable test PostgreSQL removed; no commit/push. Next is 6.2 after PR delivery
 and user instruction; parent planning files remain outside the service PR.
+
+## Current implementation — owned authorization 6.2
+
+Step 6.1 delivered per user pull confirmation. Step 6.2 is complete locally on
+`feature/owned-tool-authorization`; required PR tests/delivery pending.
+[Owned authorization](docs/owned-tool-authorization.md) implements ToolPolicy
+using exact execution scope, current access, static rules and owner-filtered
+metadata. Users/admins can only use selected own datasets. Invalid columns/types
+are denied before computation; missing/deleted/foreign/unselected references use
+safe denials. Operational failures remain distinct and cancellation propagates.
+Executor ownership checks remain active, including deletion after approval.
+
+Added 56 tests. Final PostgreSQL/non-browser gate: **814 passed, 17 browser tests
+deselected**, 214 upstream warnings. Ruff/format/pip/whitespace checks pass. No new
+dependency, schema, JWT/browser-auth, numerical or HTTP behavior. No model/cloud
+call. Disposable database removed; developer data untouched. No commit/push.
+Data-dependent guards and production composition remain 6.3/6.4. Next is 6.3
+after PR delivery/user instruction. Parent plans remain outside the service PR.
+
+### CI timing follow-up
+
+The disabled-account browser test waits for the denial document and visible login
+button after receiving response headers; it still requires HTTP 200 and no agent
+session cookie. Real PostgreSQL health tests use the existing two-second default
+probe deadline instead of a test-only 0.2 seconds. Pool exhaustion, query timeout,
+connection failure and recovery assertions remain bounded. A 250 ms delayed schema
+check reproduces the old false failure and now verifies healthy recovery. No
+application timeout, authentication behavior, dependency or CI requirement changed.
+
+Verification: the delayed-probe regression failed before the fix with the reported
+503-versus-200 symptom; focused checks then passed (14 tests). The full suite passed
+with disposable PostgreSQL and Keycloak: **832 passed, no skips**, including all
+17 browser tests, with 214 upstream warnings in 371.80 seconds. Ruff, formatting,
+dependency and whitespace checks passed. Remote required `tests` still runs on the
+PR; no commit or push was performed.

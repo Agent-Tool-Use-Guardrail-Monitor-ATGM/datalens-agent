@@ -14,7 +14,12 @@ from statistics_agent.agent.tool_schema import ToolBinding
 from statistics_agent.contracts.agent import ToolDecision, ToolProposal
 from statistics_agent.contracts.common import ConfigurationReference
 from statistics_agent.contracts.datasets import DatasetLimits, InspectDatasetArguments
-from statistics_agent.contracts.policy import PolicyEvaluation, ToolPolicyConfiguration
+from statistics_agent.contracts.policy import (
+    PolicyEvaluation,
+    ToolExecutionScope,
+    ToolPolicyConfiguration,
+)
+from support.datasets import context, owner
 
 
 def configuration(**changes):
@@ -251,3 +256,18 @@ def test_evaluated_evidence_cannot_misrepresent_a_decision(fault):
     }[fault]
     with pytest.raises(ValidationError):
         PolicyEvaluation.model_validate(result.model_copy(update=changes))
+
+
+@pytest.mark.parametrize("ids", [(uuid4(),) * 2, tuple(uuid4() for _ in range(17)), [uuid4()]])
+def test_execution_selection_rejects_duplicates_overflow_and_mutable_containers(ids):
+    with pytest.raises(ValidationError):
+        ToolExecutionScope(context=context(owner()), dataset_ids=ids)
+
+
+def test_owned_policy_revalidates_tampered_scope_before_using_dependencies():
+    from statistics_agent.agent.authorization import OwnedToolPolicy
+
+    scope = ToolExecutionScope(context=context(owner()))
+    tampered = scope.model_copy(update={"dataset_ids": (uuid4(),) * 2})
+    with pytest.raises(ValidationError):
+        OwnedToolPolicy(scope=tampered, rules=None, datasets=None, authorize=None)

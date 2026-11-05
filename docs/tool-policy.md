@@ -79,8 +79,9 @@ use. This does not implement clarification; its handler remains plan 7.
 An `allowed` result means **static rules permit the typed request**, not that its
 dataset exists or belongs to the caller. `PolicyRules.check` deliberately does
 not implement the asynchronous `ToolPolicy.evaluate(context, proposal)` execution
-interface. Step 6.2 must combine static rules with owned-resource authorization;
-6.3 must enforce actual data/group/output limits. Declaring limits in a snapshot
+interface. Step 6.2 now supplies [OwnedToolPolicy](owned-tool-authorization.md)
+for current access, selected execution scope and owned metadata authorization.
+Step 6.3 must enforce actual data/group/output limits. Declaring limits in a snapshot
 does not enforce them against unseen CSV data. Storage ownership remains enforced
 by existing dataset reads and artifact writes.
 

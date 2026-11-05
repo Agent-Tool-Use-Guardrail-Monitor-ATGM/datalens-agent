@@ -50,7 +50,8 @@ def postgres_settings():
     url = make_url(raw)
     if url.database != "agent_test_db" or url.username != "agent_test":
         pytest.fail("Health tests require agent_test_db and agent_test")
-    return Settings(app_env="test", database_url=raw, db_pool_size=1, db_health_timeout_seconds=0.2)
+    # Real PostgreSQL probes use the production deadline, including on loaded CI runners.
+    return Settings(app_env="test", database_url=raw, db_pool_size=1)
 
 
 class BrokenDatabase:
@@ -222,7 +223,17 @@ def test_ready_requires_current_schema_and_recovers_after_live_schema_repair(pos
 
 
 @pytest.mark.postgres
-def test_ready_pool_timeout_and_recovery_without_application_restart(postgres_settings):
+@pytest.mark.parametrize("schema_delay", [0, 0.25])
+def test_ready_pool_timeout_and_recovery_without_application_restart(
+    postgres_settings, monkeypatch, schema_delay
+):
+    async def delayed_schema_status(connection):
+        # Exercise recovery when a healthy query exceeds the old CI-only deadline.
+        await asyncio.sleep(schema_delay)
+        return await read_schema_status(connection)
+
+    monkeypatch.setattr("statistics_agent.api.health.read_schema_status", delayed_schema_status)
+
     async def exercise():
         async with migrated(postgres_settings):
             app = create_app(postgres_settings, log_stream=io.StringIO())
@@ -235,7 +246,7 @@ def test_ready_pool_timeout_and_recovery_without_application_restart(postgres_se
                 async with app.state.database.engine.connect():
                     start = perf_counter()
                     assert (await client.get("/health/ready")).status_code == 503
-                    assert perf_counter() - start < 1.5
+                    assert perf_counter() - start < postgres_settings.db_health_timeout_seconds + 1
                     assert (await client.get("/health/live")).status_code == 200
                 assert (await client.get("/health/ready")).status_code == 200
 
@@ -261,7 +272,9 @@ def test_ready_query_timeout_releases_connection_and_recovers(postgres_settings)
                         )
                         start = perf_counter()
                         assert (await client.get("/health/ready")).status_code == 503
-                        assert perf_counter() - start < 1.5
+                        assert (
+                            perf_counter() - start < postgres_settings.db_health_timeout_seconds + 1
+                        )
                         assert (await client.get("/health/live")).status_code == 200
                     assert (await client.get("/health/ready")).status_code == 200
             finally:
@@ -291,7 +304,7 @@ def test_ready_connection_failure_is_bounded_while_liveness_stays_available(post
             ):
                 start = perf_counter()
                 assert (await client.get("/health/ready")).status_code == 503
-                assert perf_counter() - start < 1.5
+                assert perf_counter() - start < postgres_settings.db_health_timeout_seconds + 1
                 assert (await client.get("/health/live")).status_code == 200
 
     run(exercise())

@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
-from statistics_agent.contracts.agent import ToolDecision
+from statistics_agent.contracts.agent import AgentContext, ToolDecision
 from statistics_agent.contracts.common import ConfigurationReference, Contract
 from statistics_agent.contracts.datasets import DatasetLimits, StatisticsLimits
 
@@ -58,4 +58,17 @@ class PolicyEvaluation(Contract):
                 raise ValueError("Evaluated policy requires matching decision and version")
         elif self.decision is not None:
             raise ValueError("Unavailable or unevaluated policy cannot carry a decision")
+        return self
+
+
+class ToolExecutionScope(Contract):
+    """Trusted admission snapshot, never request-supplied proof of ownership."""
+
+    context: AgentContext
+    dataset_ids: tuple[UUID, ...] = Field(default=(), strict=True, max_length=16)
+
+    @model_validator(mode="after")
+    def unique_datasets(self) -> Self:
+        if len(self.dataset_ids) != len(set(self.dataset_ids)):
+            raise ValueError("Selected datasets must be unique")
         return self

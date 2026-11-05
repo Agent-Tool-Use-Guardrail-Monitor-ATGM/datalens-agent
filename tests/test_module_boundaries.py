@@ -11,6 +11,10 @@ import pytest
     "module,forbidden",
     [
         (
+            "statistics_agent.agent.authorization",
+            ["crewai", "numpy", "scipy", "statistics_agent.agent.statistics"],
+        ),
+        (
             "statistics_agent.agent.policy",
             ["crewai", "sqlalchemy", "statistics_agent.agent.statistics"],
         ),
