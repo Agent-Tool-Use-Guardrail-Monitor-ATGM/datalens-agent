@@ -1076,3 +1076,22 @@ final full suite passed without retries. Keep this observation when assessing CI
 
 This maintenance task does not implement plan 6.1 or security follow-up 3.7.
 Parent planning updates remain outside the service repository and its PR.
+
+## Current implementation — policy configuration 6.1
+
+The module refactor is delivered per user pull confirmation. Step 6.1 is complete
+locally on `feature/tool-policy-config`; required PR tests/delivery pending.
+[Policy contracts and boundaries](docs/tool-policy.md) describe immutable versioned
+allowlists, default-disabled tools, strict operations/methods/limits and separate
+allowed/denied/unavailable/not-evaluated evidence. Both control-function names are
+reserved against numerical registry shadowing. Existing ToolDecision/event formats
+and legacy imports remain unchanged.
+
+Static rule permission is not owned execution authorization: 6.2 supplies that
+check, 6.3 applies data-dependent guards and 6.4 wires the complete runner policy.
+No public run endpoint or policy-administration API is enabled. Added 44 tests;
+758 passed with disposable PostgreSQL, 17 browser tests deselected, 214 upstream
+warnings. Python Ruff/format/pip and whitespace checks pass. No dependency,
+migration, numerical behavior, JWT/browser-auth or cloud change. No live LLM call.
+Disposable test PostgreSQL removed; no commit/push. Next is 6.2 after PR delivery
+and user instruction; parent planning files remain outside the service PR.
