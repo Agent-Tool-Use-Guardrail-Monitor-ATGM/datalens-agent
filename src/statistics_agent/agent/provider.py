@@ -117,13 +117,24 @@ class ModelAdapter:
         if tools:
             self.profile.require()
             payload.update(tools=tools, parallel_tool_calls=False)
-        if len(json.dumps(payload).encode()) > 65_536:
+        if len(self._wire_bytes(payload)) > 65_536:
             raise AdapterError("Model request exceeds byte limit")
         return payload
 
     def input_reservation(self, request: ProviderRequest, *, tools=None) -> int:
         """Conservative byte-based admission estimate, not reported token usage."""
-        return len(json.dumps(self._payload(request, tools), ensure_ascii=False).encode()) + 256
+        return len(self._wire_bytes(self._payload(request, tools))) + 256
+
+    @staticmethod
+    def _wire_bytes(payload: dict) -> bytes:
+        # Match pinned HTTPX's JSON encoding; integration checks actual request
+        # bytes, not a second pretty-printed representation of the payload.
+        try:
+            return json.dumps(
+                payload, ensure_ascii=False, allow_nan=False, separators=(",", ":")
+            ).encode("utf-8")
+        except (ValueError, TypeError, UnicodeError):
+            raise AdapterError("Model request cannot be serialized") from None
 
     async def complete(self, request: ProviderRequest, *, tools: list[dict] | None = None):
         payload = self._payload(request, tools)

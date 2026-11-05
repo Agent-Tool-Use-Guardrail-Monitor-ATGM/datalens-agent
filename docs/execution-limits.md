@@ -49,7 +49,7 @@ Provider/model profile remains pinned; switching provider requires a new session
 ## Input/output accounting
 
 The provider performs real tokenization. We do not claim exact tokenizer support.
-For admission, ModelAdapter estimates input from UTF-8 JSON payload bytes plus
+For admission, ModelAdapter estimates input from compact UTF-8 JSON wire bytes plus
 256 framing units (including tool schemas and conversation replay). This is a
 conservative application heuristic, not a universal upper bound on provider
 billing tokens. A request exceeding the existing 4,096-unit per-request cap or
@@ -128,5 +128,7 @@ worker behavior is claimed. Stop before 4.6 live-provider verification.
 Step 4.6 continuation correction preserves these budgets and admission rules.
 A reserved final-answer function adds schema/history overhead to the same input
 reservation; it receives no separate execution or budget bypass. A deterministic
-three-round fixture computes twice, then stops at request_input_limit before
-the third model call. No token budget was increased to make the fix pass.
+three-round fixture originally stopped before its third model call. Step 5.7
+compacts wire schemas/observations, allowing that small fixture to finish without
+raising any limit. Initial and accumulated oversized requests still stop before
+dispatch. See [integration evidence](agent-tool-integration.md).

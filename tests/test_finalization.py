@@ -142,9 +142,9 @@ def test_access_loss_before_finalization_denies_the_result():
 def test_calculations_can_continue_subject_to_existing_input_limit():
     session, dataset, _, executed, _ = transcript(more_calculations=True)
     result = asyncio.run(session.run("Calculate twice, then explain.", (dataset,)))
-    # A second calculation remains allowed; accumulated history then hits the
-    # existing conservative 4096-unit request cap before a third model call.
+    # Compact wire accounting leaves room for two computations and finalization.
+    # The separate oversized-input regression still enforces the unchanged cap.
     assert len(executed) == len(result.results) == 2
-    assert result.state.completed_attempts == 2
-    assert result.answer.status == "incomplete"
-    assert result.terminal_reason == "request_input_limit"
+    assert result.state.completed_attempts == 3
+    assert result.answer.status == "completed"
+    assert result.terminal_reason == "completed"

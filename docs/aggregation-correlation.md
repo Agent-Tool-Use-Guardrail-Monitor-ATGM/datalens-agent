@@ -110,3 +110,13 @@ remains running. Developer/identity databases and provider credentials untouched
 No commit/push/PR performed. Required PR tests remain the delivery gate; parent
 plans/canonical note/frontend tracker are outside service Git/PRs.
 Stop before **5.7 — full agent/tool integration and handoff**.
+
+
+## Subsequent integration — step 5.7
+
+The [full registry integration](agent-tool-integration.md) now tests real numerical
+execution and persisted artifacts through the controlled runner with a mock model.
+Small observations omit repeated selectors and implementation versions while
+retaining computed values/counts/availability; full typed artifacts remain unchanged.
+The input cap remains 4096 units and can still stop accumulated conversations.
+Production policy and durable API/event integration remain plans 6 and 7.

@@ -980,7 +980,7 @@ disposable test PostgreSQL used/removed, with Docker Desktop left running.
 No commit/push/PR performed. Stop before 5.5. Parent plans remain outside service
 Git/PRs; this README and lifecycle documentation are part of the service branch.
 
-## Current implementation — inspection/descriptive tools 5.5
+## Step 5.5 implementation record — inspection/descriptive tools
 
 Step 5.4 delivery accepted per user confirmation. Complete locally on
 feature/descriptive-tools; required PR tests/delivery pending.
@@ -1000,7 +1000,7 @@ Added 34 tests. Focused gate: 41 passed. Full PostgreSQL/non-browser gate:
 checks pass. No schema/auth/provider/cloud changes; only disposable test DB used
 and removed. No commit/push/PR performed; parent plans remain outside service Git.
 
-## Current implementation — aggregation/correlation 5.6
+## Step 5.6 implementation record — aggregation/correlation
 
 Step 5.5 delivery accepted per user confirmation. Complete locally on
 feature/aggregation-correlation; required PR tests/delivery pending.
@@ -1021,3 +1021,35 @@ Added 45 tests. Focused gate: 58 passed. Full PostgreSQL/non-browser gate:
 checks pass. No schema, auth/provider or cloud changes. Only disposable test
 PostgreSQL used/removed; Docker Desktop remains running. No commit/push/PR
 performed. Parent canonical note/plans remain outside this service Git/PR.
+
+
+## Current implementation — agent/tool integration 5.7
+
+Step 5.6 delivery accepted per user pull confirmation. Step 5.7 is complete
+locally on `test/agent-tool-integration`; required PR tests/delivery pending.
+[Integration handoff](docs/agent-tool-integration.md) documents all four real
+tools through StatisticsSession, committed owned artifacts, exact call references,
+strict validation/denials and independently retained results on incomplete runs.
+Only provider transport and policy are test fixtures; production policy remains
+plan 6 and business APIs/jobs/Kafka delivery remain plan 7.
+
+Prompt statistics-v3, lean provider schemas and structured observations remove
+redundant wire overhead. Original Pydantic bounds and all numerical values remain
+authoritative; full provenance/version metadata stays in PostgreSQL artifacts.
+The 4096-unit request cap is unchanged. Some wide/long transcripts still exceed
+it; tests verify stopping before dispatch while preserving existing artifacts.
+No frontend route or new live model compatibility is claimed.
+
+
+Verification: **709 passed, 17 browser tests deselected**, 214 upstream warnings,
+33.58 seconds, with real disposable PostgreSQL and mock model transport. Added
+26 tests; Python Ruff checks/formatting (`src` and `tests`), pip consistency and
+whitespace checks pass. Browser/auth behavior was not changed; required GitHub
+`tests` still includes browser coverage. No live LLM call, new dependency,
+migration, auth/HTTP change or cloud deployment. Only the fixed disposable test
+PostgreSQL was used and removed; developer/identity databases remain untouched.
+No commit or push performed. Required PR checks/delivery remain pending.
+
+Next: deliver this step through a PR with required `tests`; then implement only
+6.1 policy configuration when requested. Parent canonical note/plans/frontend
+handoff remain outside this service Git repository and PR.
