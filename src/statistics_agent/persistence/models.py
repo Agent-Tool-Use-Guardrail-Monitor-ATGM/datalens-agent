@@ -7,10 +7,12 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     LargeBinary,
     String,
     Text,
+    UniqueConstraint,
     Uuid,
     text,
 )
@@ -137,4 +139,140 @@ class DatasetArtifact(Base):
     # Preserve canonical JSON text exactly for byte/digest verification. JSONB
     # can normalize numbers; this payload is fetched by ID, not queried by value.
     payload_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ConversationRecord(Base):
+    __tablename__ = "agent_conversations"
+    __table_args__ = (
+        CheckConstraint(
+            "next_sequence >= 1 AND attachment_version >= 0", name="ck_conversation_counters"
+        ),
+        CheckConstraint("length(btrim(title)) BETWEEN 1 AND 120", name="ck_conversation_title"),
+        Index("ix_conversation_owner", "issuer", "subject", "id"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    issuer: Mapped[str] = mapped_column(String(2048))
+    subject: Mapped[str] = mapped_column(String(255))
+    title: Mapped[str] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    next_sequence: Mapped[int] = mapped_column(default=1)
+    attachment_version: Mapped[int] = mapped_column(default=0)
+
+
+class ConversationDataset(Base):
+    __tablename__ = "agent_conversation_datasets"
+    conversation_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("agent_conversations.id", ondelete="CASCADE"), primary_key=True
+    )
+    dataset_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("agent_datasets.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
+class RunRecord(Base):
+    __tablename__ = "agent_runs"
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "idempotency_key", name="uq_run_idempotency"),
+        UniqueConstraint("id", "conversation_id", name="uq_run_conversation_identity"),
+        CheckConstraint("lifecycle IN ('queued','running','finished')", name="ck_run_lifecycle"),
+        CheckConstraint(
+            "(lifecycle = 'finished' AND outcome IS NOT NULL AND "
+            "outcome IN ('completed','needs_input','unsupported','incomplete') "
+            "AND finished_at IS NOT NULL) OR (lifecycle <> 'finished' AND outcome IS NULL "
+            "AND finished_at IS NULL AND clarification IS NULL)",
+            name="ck_run_terminal",
+        ),
+        CheckConstraint(
+            "(started_at IS NULL OR started_at >= created_at) AND "
+            "(finished_at IS NULL OR finished_at >= coalesce(started_at,created_at)) AND "
+            "(lifecycle <> 'running' OR started_at IS NOT NULL) AND "
+            "(lifecycle <> 'queued' OR started_at IS NULL)",
+            name="ck_run_times",
+        ),
+        CheckConstraint(
+            "(outcome = 'needs_input' AND clarification IS NOT NULL) OR "
+            "(outcome IS DISTINCT FROM 'needs_input' AND clarification IS NULL)",
+            name="ck_run_clarification",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(results) = 'array' AND jsonb_array_length(results) <= 128 AND "
+            "(outcome IS DISTINCT FROM 'completed' OR jsonb_array_length(results) > 0) AND "
+            "(lifecycle <> 'queued' OR jsonb_array_length(results) = 0)",
+            name="ck_run_results",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(datasets) = 'array' AND jsonb_array_length(datasets) <= 16 AND "
+            "octet_length(datasets::text) <= 1048576",
+            name="ck_run_datasets",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(submission) = 'object' AND octet_length(submission::text) <= 65536 AND "
+            "jsonb_typeof(configuration) = 'object' AND octet_length(configuration::text) <= 65536",
+            name="ck_run_snapshots",
+        ),
+        CheckConstraint(
+            "fingerprint ~ '^[0-9a-f]{64}$' AND attachment_version >= 0", name="ck_run_admission"
+        ),
+        Index("ix_run_conversation", "conversation_id", "id"),
+        Index(
+            "uq_run_active",
+            "conversation_id",
+            unique=True,
+            postgresql_where=text("lifecycle IN ('queued','running')"),
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    conversation_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("agent_conversations.id", ondelete="CASCADE")
+    )
+    idempotency_key: Mapped[UUID] = mapped_column(Uuid)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    lifecycle: Mapped[str] = mapped_column(String(16))
+    outcome: Mapped[str | None] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attachment_version: Mapped[int]
+    conversation_title: Mapped[str] = mapped_column(String(120))
+    submission: Mapped[dict] = mapped_column(JSONB)
+    configuration: Mapped[dict] = mapped_column(JSONB)
+    datasets: Mapped[list] = mapped_column(JSONB)
+    results: Mapped[list] = mapped_column(JSONB)
+    clarification: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+
+
+class ConversationMessageRecord(Base):
+    __tablename__ = "agent_messages"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["run_id", "conversation_id"],
+            ["agent_runs.id", "agent_runs.conversation_id"],
+            ondelete="CASCADE",
+            name="fk_message_run_conversation",
+        ),
+        UniqueConstraint("conversation_id", "sequence", name="uq_message_sequence"),
+        CheckConstraint(
+            "sequence >= 1 AND role IN ('user','assistant')", name="ck_message_identity"
+        ),
+        CheckConstraint("length(content) BETWEEN 1 AND 16384", name="ck_message_content"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    conversation_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("agent_conversations.id", ondelete="CASCADE")
+    )
+    run_id: Mapped[UUID] = mapped_column(Uuid)
+    sequence: Mapped[int]
+    role: Mapped[str] = mapped_column(String(16))
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RunJob(Base):
+    """Durable pending identity only; leases/claims are introduced in 7.5."""
+
+    __tablename__ = "agent_run_jobs"
+    run_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("agent_runs.id", ondelete="CASCADE"), primary_key=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

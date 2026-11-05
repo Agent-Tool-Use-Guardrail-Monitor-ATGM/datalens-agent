@@ -1,12 +1,15 @@
 # DataLens statistics-agent development
 
-Latest step: [7.1 conversation/run/control/event contracts](docs/conversation-run-contracts.md),
-complete locally on `feature/conversation-run-contracts`; required PR tests/delivery
-pending. Plan 6 delivery is accepted from the user's pull confirmation. New strict
-values cover lifecycle/outcome, clarification, provenance, pagination and opt-in
-typed event v2 payloads. Existing runner/answers/producers/routes are unchanged.
-Verification: 897 passed, 17 browser tests deselected; final payload recheck: 14
-passed. Ruff/format/pip/whitespace checks pass. Next after delivery: only 7.2.
+Latest step: [7.2 conversation history and atomic admission](docs/conversation-persistence.md),
+complete locally on `feature/conversation-persistence`; required PR tests/delivery
+pending. Step 7.1 is delivered per user pull confirmation. Migration
+`0005_conversation_history` adds five agent-owned history/job tables. Internal
+storage atomically admits one active run with message/job, idempotent replay and
+immutable owned dataset/configuration snapshots. Apply the new migration head
+through the existing migration gate before application readiness after merge.
+Verification: **938 passed, no skips**, including all 17 browser tests;
+Ruff/format/pip/whitespace checks pass. No new public API or worker. Next after
+delivery/user instruction: only 7.3 bounded context.
 
 Previous step: [6.4 controlled runner integration](docs/controlled-runner-integration.md),
 delivered per user pull confirmation. Step 6.3 is also delivered.
