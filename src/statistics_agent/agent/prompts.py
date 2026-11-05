@@ -6,6 +6,7 @@ from statistics_agent.contracts.agent import PromptDefinition
 from statistics_agent.contracts.common import ConfigurationReference
 
 FINALIZE = "finalize_statistics"
+CONTROL_FUNCTIONS = frozenset({FINALIZE, "request_clarification"})
 
 
 ROLE = "Statistics analyst"

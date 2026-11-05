@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from statistics_agent.agent.crewai_llm import Agent, StatisticsLLM
 from statistics_agent.agent.errors import AdapterError, EvidenceDeliveryError
 from statistics_agent.agent.limits import RunStopped
-from statistics_agent.agent.prompts import BACKSTORY, GOAL, ROLE
+from statistics_agent.agent.prompts import BACKSTORY, CONTROL_FUNCTIONS, GOAL, ROLE
 from statistics_agent.agent.prompts import FINALIZE as FINALIZE
 from statistics_agent.agent.prompts import PROMPT as PROMPT
 from statistics_agent.agent.provider import ModelAdapter
@@ -70,7 +70,7 @@ class StatisticsSession:
         if (
             len(bindings) > 32
             or len({b.name for b in bindings}) != len(bindings)
-            or any(b.name == FINALIZE for b in bindings)
+            or any(b.name in CONTROL_FUNCTIONS for b in bindings)
         ):
             raise AdapterError("Invalid tool registry")
         self._schemas = [b.schema() for b in bindings]
