@@ -10,6 +10,9 @@ import pytest
 @pytest.mark.parametrize(
     "module,forbidden",
     [
+        ("statistics_agent.agent.context", ["crewai", "numpy", "scipy", "sqlalchemy"]),
+        ("statistics_agent.contracts.context", ["crewai", "numpy", "scipy", "sqlalchemy"]),
+        ("statistics_agent.tools.observations", ["crewai", "numpy", "scipy", "sqlalchemy"]),
         (
             "statistics_agent.contracts.conversations",
             ["crewai", "sqlalchemy", "statistics_agent.agent.statistics"],

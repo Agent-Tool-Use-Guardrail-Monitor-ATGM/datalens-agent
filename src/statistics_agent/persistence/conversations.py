@@ -411,3 +411,41 @@ class ConversationStore:
                 raise ConversationBusyError
             await session.delete(conversation)
             await session.commit()
+
+    async def recent_messages(self, principal, conversation_id, *, before_run_id, limit=13):
+        """Bounded newest history strictly before the admitted question, not a full replay."""
+        PageRequest(limit=limit)
+        async with self._database.session() as session:
+            await self._owned(session, principal, conversation_id)
+            boundary = await session.scalar(
+                select(ConversationMessageRecord.sequence).where(
+                    ConversationMessageRecord.conversation_id == conversation_id,
+                    ConversationMessageRecord.run_id == before_run_id,
+                    ConversationMessageRecord.role == "user",
+                )
+            )
+            if boundary is None:
+                raise ConversationNotFoundError
+            rows = (
+                await session.scalars(
+                    select(ConversationMessageRecord)
+                    .where(
+                        ConversationMessageRecord.conversation_id == conversation_id,
+                        ConversationMessageRecord.sequence < boundary,
+                    )
+                    .order_by(ConversationMessageRecord.sequence.desc())
+                    .limit(limit)
+                )
+            ).all()
+            return tuple(
+                ConversationMessage(
+                    message_id=row.id,
+                    conversation_id=row.conversation_id,
+                    run_id=row.run_id,
+                    sequence=row.sequence,
+                    role=row.role,
+                    content=row.content,
+                    created_at=row.created_at,
+                )
+                for row in reversed(rows)
+            )

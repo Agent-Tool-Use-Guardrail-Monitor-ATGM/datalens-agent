@@ -1,15 +1,19 @@
 # DataLens statistics-agent development
 
-Latest step: [7.2 conversation history and atomic admission](docs/conversation-persistence.md),
-complete locally on `feature/conversation-persistence`; required PR tests/delivery
-pending. Step 7.1 is delivered per user pull confirmation. Migration
-`0005_conversation_history` adds five agent-owned history/job tables. Internal
-storage atomically admits one active run with message/job, idempotent replay and
-immutable owned dataset/configuration snapshots. Apply the new migration head
-through the existing migration gate before application readiness after merge.
-Verification: **938 passed, no skips**, including all 17 browser tests;
-Ruff/format/pip/whitespace checks pass. No new public API or worker. Next after
-delivery/user instruction: only 7.3 bounded context.
+CI timeout follow-up (6 November 2026): the required `tests` job allows 30 minutes
+for setup plus testing. Run 42200427469 spent 12m47s on setup and was cancelled
+after only 2m26s of pytest under the previous 15-minute job limit. Test coverage,
+commands, required-check name and branch protection are unchanged.
+
+Latest step: [7.3 bounded conversation context](docs/bounded-conversation-context.md),
+complete locally on `feature/bounded-conversation-context`; required PR tests/
+delivery pending. Step 7.2 is delivered per user pull confirmation. The internal
+runner can prepare owned stored context, omit optional old turns within exact
+request/schema budgets, and use verified historical results through run-local
+citation mappings. Legacy finalizer provenance checks remain enforced.
+Verification: **946 passed, 17 browser tests deselected**; Ruff/format/pip/whitespace
+checks pass. No new migration, route or worker. Next after delivery/user
+instruction: only 7.4 clarification and partial-result integration.
 
 Previous step: [6.4 controlled runner integration](docs/controlled-runner-integration.md),
 delivered per user pull confirmation. Step 6.3 is also delivered.

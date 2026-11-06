@@ -3,6 +3,7 @@
 import asyncio
 import json
 from collections.abc import Awaitable, Callable
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -37,6 +38,7 @@ from statistics_agent.contracts.agent import DatasetSummary as DatasetSummary
 from statistics_agent.contracts.agent import StatisticsAnswer as StatisticsAnswer
 from statistics_agent.contracts.agent import StatisticsRun as StatisticsRun
 from statistics_agent.contracts.common import ConfigurationReference
+from statistics_agent.contracts.context import PreparedContext
 from statistics_agent.contracts.events import EventEnvelope
 from statistics_agent.contracts.policy import PolicyEvaluation
 
@@ -165,7 +167,63 @@ class StatisticsSession:
             results=tuple(self._results),
         )
 
-    async def run(self, question: str, datasets: tuple[DatasetSummary, ...]) -> StatisticsRun:
+    async def prepare_context(self, conversations, datasets, artifacts) -> PreparedContext:
+        """Prepare only server-owned stored admission; no provider call or budget increase."""
+        from statistics_agent.agent.context import ContextUnavailableError, build_context
+
+        if self._used or not await self._has_access():
+            raise ContextUnavailableError
+        remaining = (self._state.deadline - datetime.now(UTC)).total_seconds()
+        if remaining <= 0:
+            raise ContextUnavailableError
+        async with asyncio.timeout(remaining):
+            return await build_context(
+                context=self._state.context,
+                versions=self._state.versions,
+                conversations=conversations,
+                datasets=datasets,
+                artifacts=artifacts,
+                reserve=self._context_reservation,
+                budget=min(self._profile.input_token_budget, self._state.remaining_input_tokens),
+            )
+
+    def _schemas_for_results(self, known):
+        schemas = deepcopy(self._schemas)
+        parameters = schemas[-1]["function"]["parameters"]
+        result_schema = parameters["properties"]["result_ids"]
+        if known:
+            result_schema["items"] = {"type": "string", "enum": [str(item) for item in known]}
+            result_schema["maxItems"] = 128
+            parameters["properties"]["status"]["enum"] = ["completed", "unsupported", "incomplete"]
+        else:
+            result_schema["maxItems"] = 0
+            parameters["properties"]["status"]["enum"] = ["unsupported", "incomplete"]
+        return schemas
+
+    def _context_reservation(self, messages, known):
+        context = self._state.context
+        request = ProviderRequest(
+            attempt=ModelAttempt(
+                run_id=context.run_id,
+                session_id=context.session_id,
+                request_id=context.request_id,
+                model_call_id=uuid4(),
+                attempt_index=1,
+            ),
+            profile=self._state.versions.provider,
+            messages=messages,
+            max_output_tokens=min(self._output_limit, self._state.remaining_output_tokens),
+            deadline=self._state.deadline,
+        )
+        return self._adapter.input_reservation(request, tools=self._schemas_for_results(known))
+
+    async def run(
+        self,
+        question: str,
+        datasets: tuple[DatasetSummary, ...],
+        *,
+        prepared: PreparedContext | None = None,
+    ) -> StatisticsRun:
         if self._used:
             raise AdapterError("Statistics sessions are single use")
         self._used = True
@@ -173,8 +231,29 @@ class StatisticsSession:
             budget = (self._state.deadline - datetime.now(UTC)).total_seconds()
             if budget <= 0:
                 raise RunStopped("deadline_exceeded")
+            if prepared is not None:
+                try:
+                    prepared = PreparedContext.model_validate(prepared, strict=True)
+                except ValidationError:
+                    raise AdapterError("Invalid prepared context") from None
+                if (
+                    prepared.context != self._state.context
+                    or prepared.versions != self._state.versions
+                    or prepared.question != question
+                    or prepared.datasets != datasets
+                    or prepared.messages[0].content != PROMPT.instructions
+                ):
+                    raise AdapterError("Prepared context does not match execution")
+                self._results.extend(item.result for item in prepared.historical)
+                self._state = self._state.model_copy(
+                    update={
+                        "artifacts": tuple(
+                            dict.fromkeys(item.result.artifact for item in prepared.historical)
+                        )
+                    }
+                )
             async with asyncio.timeout(budget):
-                return await self._run(question, datasets)
+                return await self._run(question, datasets, prepared=prepared)
         except TimeoutError:
             return self._finish(
                 "incomplete", "The analysis deadline was reached.", "deadline_exceeded"
@@ -195,17 +274,9 @@ class StatisticsSession:
 
     async def _model_call(self):
         # Contextual constraints guide selection; local provenance validation remains authoritative.
-        parameters = self._schemas[-1]["function"]["parameters"]
-        result_schema = parameters["properties"]["result_ids"]
-        known = [str(r.tool_call_id) for r in self._results if r.status == "completed"]
-        if known:
-            result_schema["items"] = {"type": "string", "enum": known}
-        else:
-            result_schema["maxItems"] = 0
-            parameters["properties"]["status"]["enum"] = ["unsupported", "incomplete"]
-        if known:
-            result_schema["maxItems"] = 128
-            parameters["properties"]["status"]["enum"] = ["completed", "unsupported", "incomplete"]
+        self._schemas = self._schemas_for_results(
+            tuple(r.tool_call_id for r in self._results if r.status == "completed")
+        )
         logical_id = uuid4()
         for index in range(1, self._profile.max_retries + 2):
             if not await self._has_access():
@@ -406,7 +477,9 @@ class StatisticsSession:
             update={"messages": (*self._state.messages, observation)}
         )
 
-    async def _run(self, question: str, datasets: tuple[DatasetSummary, ...]) -> StatisticsRun:
+    async def _run(
+        self, question: str, datasets: tuple[DatasetSummary, ...], *, prepared=None
+    ) -> StatisticsRun:
         if len(datasets) > 16:
             raise AdapterError("Too many datasets for one run")
         # Authentication identifiers and service secrets never enter model messages.
@@ -419,6 +492,8 @@ class StatisticsSession:
             AgentMessage(role="system", content=PROMPT.instructions),
             AgentMessage(role="user", content=supplied),
         )
+        if prepared is not None:
+            messages = prepared.messages
         self._state = self._state.model_copy(update={"messages": messages})
         results = self._results
         for _ in range(self._profile.max_steps):
