@@ -29,6 +29,8 @@ from statistics_agent.tools.descriptive import (
     describe_columns,
     inspect_dataset,
 )
+from statistics_agent.tools.observations import MAX_SUMMARY_BYTES as MAX_SUMMARY_BYTES
+from statistics_agent.tools.observations import statistics_summary
 
 STATISTICS_BINDINGS = (
     ToolBinding(
@@ -52,7 +54,6 @@ STATISTICS_BINDINGS = (
         CorrelateColumnsArguments,
     ),
 )
-MAX_SUMMARY_BYTES = 1024
 
 
 def _failed(proposal: ToolProposal, code: str) -> ToolResult:
@@ -124,47 +125,7 @@ class StatisticsTools:
                 artifact_json(payload, self._limits.max_result_bytes)
             except ValueError:
                 return _failed(proposal, "result_limit_exceeded")
-            # Provenance and implementation metadata remain in the complete artifact.
-            # Keep every numerical value, missing count and availability reason.
-            summary_result = {
-                key: value
-                for key, value in payload["result"].items()
-                if key
-                not in {
-                    "dataset_id",
-                    "backend",
-                    "backend_version",
-                    "numpy_version",
-                    "scipy_version",
-                    "dtype",
-                    "column",
-                    "operation",
-                    "group_by",
-                    "x_column",
-                    "y_column",
-                }
-            }
-            candidate = json.dumps(
-                {"result": summary_result},
-                ensure_ascii=False,
-                allow_nan=False,
-                separators=(",", ":"),
-            )
-            if len(candidate.encode("utf-8")) <= MAX_SUMMARY_BYTES:
-                summary = candidate
-            else:
-                notice = {
-                    "tool": proposal.name,
-                    "dataset_id": str(arguments.dataset_id),
-                    "details_in_artifact": True,
-                }
-                if proposal.name in {"inspect_dataset", "describe_columns"}:
-                    notice["column_count"] = len(result.columns)
-                elif proposal.name == "aggregate_statistics":
-                    notice["group_count"] = len(result.groups)
-                else:
-                    notice["sample_size"] = result.sample_size
-                summary = json.dumps(notice, separators=(",", ":"))
+            summary = statistics_summary(proposal.name, result)
             artifact = await self._artifacts.create_artifact(
                 context.principal, arguments.dataset_id, payload
             )
