@@ -1,5 +1,10 @@
 # DataLens statistics-agent development
 
+CI timeout follow-up (6 November 2026): the required `tests` job allows 30 minutes
+for setup plus testing. Run 42200427469 spent 12m47s on setup and was cancelled
+after only 2m26s of pytest under the previous 15-minute job limit. Test coverage,
+commands, required-check name and branch protection are unchanged.
+
 Latest step: [7.3 bounded conversation context](docs/bounded-conversation-context.md),
 complete locally on `feature/bounded-conversation-context`; required PR tests/
 delivery pending. Step 7.2 is delivered per user pull confirmation. The internal

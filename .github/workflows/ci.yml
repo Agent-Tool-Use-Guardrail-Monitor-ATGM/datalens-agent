@@ -12,7 +12,8 @@ permissions:
 jobs:
   tests:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Cold dependency/browser/container downloads share the job's test budget.
+    timeout-minutes: 30
 
     services:
       agent-test-postgres:
