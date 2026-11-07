@@ -15,12 +15,15 @@ from statistics_agent.contracts.conversations import (
     Conversation,
     ConversationMessage,
     ConversationRun,
+    ConversationRunV2,
     DatasetSelection,
     DatasetSnapshot,
+    ImportedResult,
     Page,
     PageRequest,
     RequestClarification,
     ResultProvenance,
+    RunCompletion,
     RunError,
     RunSubmission,
 )
@@ -53,6 +56,37 @@ def values():
         selection=(snapshot,),
         results=(result,),
     )
+
+
+@pytest.mark.parametrize("damage", [None, "alias", "source_run", "conversation", "answer_id"])
+def test_v2_historical_citations_are_explicit_and_v1_remains_strict(damage):
+    from uuid import uuid5
+
+    data = values()
+    source = data["results"][0].model_copy(update={"run_id": uuid4()})
+    alias = uuid5(data["run_id"], str(source.tool_call_id))
+    if damage == "alias":
+        alias = uuid4()
+    if damage == "source_run":
+        source = source.model_copy(update={"run_id": data["run_id"]})
+    if damage == "conversation":
+        source = source.model_copy(update={"conversation_id": uuid4()})
+    completion = RunCompletion(
+        answer=StatisticsAnswer(
+            status="completed",
+            explanation="Verified history.",
+            result_ids=(uuid4() if damage == "answer_id" else alias,),
+        ),
+        imported_results=(ImportedResult(result_id=alias, source=source),),
+    )
+    if damage:
+        with pytest.raises(ValidationError):
+            ConversationRunV2(**(data | {"results": (), "completion": completion}))
+    else:
+        view = ConversationRunV2(**(data | {"results": (), "completion": completion}))
+        assert ConversationRunV2.model_validate_json(view.model_dump_json()) == view
+        with pytest.raises(ValidationError):
+            ConversationRun(**(data | {"results": ()}))
 
 
 @pytest.mark.parametrize("outcome", ["completed", "needs_input", "unsupported", "incomplete"])

@@ -36,7 +36,7 @@ def model_tool_schema(schema: dict) -> dict:
     String/array size bounds remain enforced by the original Pydantic model.
     Preserve actual field/definition names, even if named title or maxLength.
     """
-    omitted = {"title", "default", "minLength", "maxLength", "minItems", "maxItems"}
+    omitted = {"description", "title", "default", "minLength", "maxLength", "minItems", "maxItems"}
     mappings = {"properties", "$defs", "definitions", "patternProperties", "dependentSchemas"}
     alternatives = {"anyOf", "oneOf", "allOf", "prefixItems"}
     children = {"items", "additionalProperties", "contains", "not", "if", "then", "else"}
@@ -74,6 +74,14 @@ def model_tool_schema(schema: dict) -> dict:
             compact[key] = value
         return compact
 
-    if definitions and len(leaf_names) == len(definitions):
-        return inline({key: value for key, value in result.items() if key != "$defs"})
+    while definitions and leaf_names:
+        result = inline({key: value for key, value in result.items() if key != "$defs"})
+        definitions = {
+            name: inline(child) for name, child in definitions.items() if name not in leaf_names
+        }
+        leaf_names = {
+            name for name, child in definitions.items() if "$ref" not in json.dumps(child)
+        }
+    if definitions:
+        result["$defs"] = definitions
     return result

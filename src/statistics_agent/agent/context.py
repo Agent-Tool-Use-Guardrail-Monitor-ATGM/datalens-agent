@@ -8,20 +8,8 @@ from pydantic import ValidationError
 from statistics_agent.agent.errors import AdapterError
 from statistics_agent.contracts.agent import AgentMessage, DatasetSummary, ToolResult
 from statistics_agent.contracts.context import HistoricalResult, PreparedContext
-from statistics_agent.contracts.statistics import (
-    AggregateStatisticsResult,
-    CorrelationResult,
-    DatasetInspection,
-    DescribeColumnsResult,
-)
-from statistics_agent.tools.observations import statistics_summary
+from statistics_agent.tools.observations import verified_summary
 
-RESULTS = {
-    "inspect_dataset": DatasetInspection,
-    "describe_columns": DescribeColumnsResult,
-    "aggregate_statistics": AggregateStatisticsResult,
-    "correlate_columns": CorrelationResult,
-}
 MAX_HISTORY = 12
 
 
@@ -63,21 +51,18 @@ async def build_context(*, context, versions, conversations, datasets, artifacts
                 raise ValueError
             current = await datasets.get_metadata(context.principal, source.dataset.dataset_id)
             artifact = await artifacts.get_artifact(context.principal, source.artifact.artifact_id)
-            payload = artifact.payload
             if (
                 current.sha256 != source.dataset.sha256
                 or artifact.reference != source.artifact
                 or artifact.dataset_id != source.dataset.dataset_id
-                or set(payload)
-                != {"schema_version", "tool", "tool_call_id", "dataset_sha256", "result"}
-                or payload["schema_version"] != "statistics-result-v1"
-                or payload["tool_call_id"] != str(source.tool_call_id)
-                or payload["dataset_sha256"] != source.dataset.sha256
             ):
                 raise ValueError
-            result = RESULTS[payload["tool"]].model_validate(payload["result"])
-            if result.dataset_id != source.dataset.dataset_id:
-                raise ValueError
+            summary = verified_summary(
+                artifact.payload,
+                tool_call_id=source.tool_call_id,
+                dataset_id=source.dataset.dataset_id,
+                sha256=source.dataset.sha256,
+            )
             historical.append(
                 HistoricalResult(
                     source=source,
@@ -85,7 +70,7 @@ async def build_context(*, context, versions, conversations, datasets, artifacts
                         tool_call_id=uuid5(context.run_id, str(source.tool_call_id)),
                         status="completed",
                         artifact=source.artifact,
-                        summary=statistics_summary(payload["tool"], result),
+                        summary=summary,
                     ),
                 )
             )
@@ -110,8 +95,6 @@ async def build_context(*, context, versions, conversations, datasets, artifacts
                         "verified_prior_results": [
                             {
                                 "result_id": str(item.result.tool_call_id),
-                                "source_run_id": str(item.source.run_id),
-                                "source_tool_call_id": str(item.source.tool_call_id),
                                 "dataset_id": str(item.source.dataset.dataset_id),
                                 "summary": json.loads(item.result.summary),
                             }

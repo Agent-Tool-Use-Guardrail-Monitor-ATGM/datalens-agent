@@ -1,12 +1,18 @@
 """Planned conversation/run wire values; no admission, persistence or execution."""
 
 from typing import Annotated, Literal, Self
-from uuid import UUID
+from uuid import UUID, uuid5
 
 from pydantic import AwareDatetime, Field, StringConstraints, model_validator
 
-from statistics_agent.contracts.agent import AgentVersions
-from statistics_agent.contracts.common import ArtifactReference, Contract, ShortReference
+from statistics_agent.contracts.agent import AgentVersions, ClarificationAnswer, StatisticsAnswer
+from statistics_agent.contracts.clarification import (
+    ClarificationOption as ClarificationOption,
+)
+from statistics_agent.contracts.clarification import (
+    RequestClarification as RequestClarification,
+)
+from statistics_agent.contracts.common import ArtifactReference, Contract
 
 type Question = Annotated[
     str, StringConstraints(strict=True, min_length=1, max_length=8192, pattern=r"\S")
@@ -77,29 +83,6 @@ class ConversationMessage(Contract):
     created_at: AwareDatetime
 
 
-class ClarificationOption(Contract):
-    key: ShortReference
-    text: Annotated[
-        str, StringConstraints(strict=True, min_length=1, max_length=256, pattern=r"\S")
-    ] = Field(repr=False)
-
-
-class RequestClarification(Contract):
-    """Arguments for request_clarification; control only, not a numerical tool."""
-
-    question: Annotated[
-        str, StringConstraints(strict=True, min_length=1, max_length=512, pattern=r"\S")
-    ] = Field(repr=False)
-    options: tuple[ClarificationOption, ...] = Field(default=(), max_length=8)
-
-    @model_validator(mode="after")
-    def unique_options(self) -> Self:
-        keys = [option.key for option in self.options]
-        if len(keys) != len(set(keys)):
-            raise ValueError("Clarification option keys must be unique")
-        return self
-
-
 class ConversationRun(Contract):
     schema_version: Literal["conversation-run-v1"] = "conversation-run-v1"
     run_id: UUID
@@ -113,6 +96,9 @@ class ConversationRun(Contract):
     selection: tuple[DatasetSnapshot, ...] = Field(default=(), max_length=16)
     results: tuple[ResultProvenance, ...] = Field(default=(), max_length=128)
     clarification: RequestClarification | None = Field(default=None, repr=False)
+
+    def _has_verified_results(self):
+        return bool(self.results)
 
     @model_validator(mode="after")
     def consistent_state(self) -> Self:
@@ -135,7 +121,7 @@ class ConversationRun(Contract):
             raise ValueError("Completion time precedes execution")
         if (self.outcome == "needs_input") != (self.clarification is not None):
             raise ValueError("Only needs_input requires clarification")
-        if self.outcome == "completed" and not self.results:
+        if self.outcome == "completed" and not self._has_verified_results():
             raise ValueError("Completed statistics require verified results")
         datasets = {item.dataset_id: item.sha256 for item in self.selection}
         if len(datasets) != len(self.selection):
@@ -150,6 +136,47 @@ class ConversationRun(Contract):
             ):
                 raise ValueError("Result provenance does not match this run")
             calls.add(result.tool_call_id)
+        return self
+
+
+class ImportedResult(Contract):
+    """Run-local citation alias; source always keeps its original computation identity."""
+
+    result_id: UUID
+    source: ResultProvenance
+
+
+class RunCompletion(Contract):
+    answer: StatisticsAnswer | ClarificationAnswer = Field(repr=False)
+    imported_results: tuple[ImportedResult, ...] = Field(default=(), max_length=16)
+
+
+class ConversationRunV2(ConversationRun):
+    schema_version: Literal["conversation-run-v2"] = "conversation-run-v2"
+    completion: RunCompletion
+
+    def _has_verified_results(self):
+        return bool(self.results or self.completion.imported_results)
+
+    @model_validator(mode="after")
+    def consistent_completion(self):
+        answer = self.completion.answer
+        if self.lifecycle != "finished" or self.outcome != answer.status:
+            raise ValueError("Completion requires a matching finished outcome")
+        if self.clarification != getattr(answer, "clarification", None):
+            raise ValueError("Clarification must match completion")
+        known = {result.tool_call_id for result in self.results}
+        for item in self.completion.imported_results:
+            if (
+                item.source.conversation_id != self.conversation_id
+                or item.source.run_id == self.run_id
+                or item.result_id != uuid5(self.run_id, str(item.source.tool_call_id))
+                or item.result_id in known
+            ):
+                raise ValueError("Imported citation does not match its original source")
+            known.add(item.result_id)
+        if isinstance(answer, StatisticsAnswer) and not set(answer.result_ids) <= known:
+            raise ValueError("Answer contains unverified citations")
         return self
 
 

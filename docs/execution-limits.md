@@ -52,7 +52,7 @@ The provider performs real tokenization. We do not claim exact tokenizer support
 For admission, ModelAdapter estimates input from compact UTF-8 JSON wire bytes plus
 256 framing units (including tool schemas and conversation replay). This is a
 conservative application heuristic, not a universal upper bound on provider
-billing tokens. A request exceeding the existing 4,096-unit per-request cap or
+billing tokens. A request exceeding the pinned per-request cap (6,144 for new v4 profiles; 4,096 for stored v3 profiles) or
 remaining run-input budget is rejected before HTTP. A small real-token request
 can therefore be rejected conservatively.
 
@@ -132,3 +132,6 @@ three-round fixture originally stopped before its third model call. Step 5.7
 compacts wire schemas/observations, allowing that small fixture to finish without
 raising any limit. Initial and accumulated oversized requests still stop before
 dispatch. See [integration evidence](agent-tool-integration.md).
+
+Step 7.4 explicitly versions the request cap for the six-function registry; total
+run budgets remain unchanged. See [budget evidence](clarification-and-partial-results.md).

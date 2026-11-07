@@ -46,7 +46,10 @@ for a session. A reference alone cannot reconstruct an old snapshot: plan 7 must
 persist the actual public values. Azure deployment names can be retargeted remotely;
 record actual returned model/version later rather than promising immutable weights.
 
-Initial application caps are 4,096 input tokens and 1,024 output tokens; these are
+Current model-profile-v4 caps are 6,144 input-reservation units and 1,024 output
+tokens; stored v3 profiles retain 4,096. The input reservation is UTF-8 request
+bytes plus 256, not a provider tokenizer count. The full six-function registry
+requires the explicit v4 increase; [step 7.4 evidence](clarification-and-partial-results.md). These are
 not advertised context maxima or account quotas. Tool calling and JSON mode are
 expected profile capabilities; strict JSON-schema output and parallel tools remain
 disabled conservatively. `profile.require(structured_output=True)` rejects the

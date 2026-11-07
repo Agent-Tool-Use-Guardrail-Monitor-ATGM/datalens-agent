@@ -106,7 +106,7 @@ async def execute(
         data = json.loads(request.content)
         requests.append(data)
         names = {tool["function"]["name"] for tool in data["tools"]}
-        assert names == {b.name for b in executor.bindings} | {FINALIZE}
+        assert names == {b.name for b in executor.bindings} | {FINALIZE, "request_clarification"}
         assert reservations[-1] == len(request.content) + 256
         observations = [message for message in data["messages"] if message["role"] == "tool"]
         if not observations:
@@ -200,7 +200,7 @@ def test_full_registry_executes_real_owned_tool_and_validates_finalization(
             assert result.state.completed_attempts == len(requests) == 2
             assert result.answer.result_ids == (result.results[0].tool_call_id,)
             assert len(result.results) == 1 and len(result.state.artifacts) == 1
-            assert max(reservations) <= 4096
+            assert max(reservations) <= 6144
             assert [e.sequence for e in events] == list(range(1, len(events) + 1))
             assert events[-1].data["reason"] == "answer_validated"
             artifact = await store.get_artifact(principal, result.results[0].artifact.artifact_id)
@@ -439,11 +439,11 @@ def test_accumulated_input_limit_preserves_real_artifact_and_skips_next_model_ca
                 metadata.dataset_id,
                 "inspect_dataset",
                 {},
-                question="q" * 600,
+                question="q" * 2000,
             )
             assert result.terminal_reason == "request_input_limit"
             assert result.answer.status == "incomplete" and len(requests) == 1
-            assert reservations[0] <= 4096 < reservations[-1]
+            assert reservations[0] <= 6144 < reservations[-1]
             assert len(result.results) == 1 and result.results[0].status == "completed"
             assert await store.get_artifact(principal, result.results[0].artifact.artifact_id)
 
