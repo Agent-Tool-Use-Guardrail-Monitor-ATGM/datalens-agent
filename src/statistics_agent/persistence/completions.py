@@ -24,6 +24,7 @@ from statistics_agent.persistence.models import (
     ConversationRecord,
     Dataset,
     DatasetArtifact,
+    RunAttemptRecord,
     RunJob,
     RunRecord,
 )
@@ -70,12 +71,14 @@ async def _verified(session, principal, reference):
     )
 
 
-async def finish_run(database, execution: StatisticsRun):
+async def finish_run(database, execution: StatisticsRun, *, claim_id=None):
     """Persist trusted runner output after caller's access check, never client JSON.
 
     Recheck stored ownership and artifact identity in the terminal transaction.
-    Step 7.5 must fence this write with the current worker attempt/lease.
+    Claimed jobs require the matching live attempt, request and browser binding.
     """
+    from statistics_agent.persistence.jobs import LeaseLost, finish_attempt, require_lease
+
     execution = StatisticsRun.model_validate(execution, strict=True)
     context = execution.state.context
     async with database.session() as session:
@@ -93,6 +96,16 @@ async def finish_run(database, execution: StatisticsRun):
         if conversation is None:
             raise ConversationNotFoundError
         row = await session.get(RunRecord, context.run_id, with_for_update=True)
+        job = await session.get(RunJob, row.id, with_for_update=True)
+        if claim_id is not None or (job is not None and job.claim_id is not None):
+            await require_lease(session, row.id, claim_id)
+            attempt = await session.get(RunAttemptRecord, claim_id)
+            if (
+                context.session_id != claim_id
+                or context.request_id != attempt.request_id
+                or context.principal.auth_session_ref != job.auth_session_ref
+            ):
+                raise LeaseLost
         admission = _admission(row)
         if row.lifecycle == "finished":
             raise RunInputUnavailableError
@@ -138,7 +151,7 @@ async def finish_run(database, execution: StatisticsRun):
                     )
                     await _verified(session, context.principal, source)
                     computed.append(source)
-            now = datetime.now(UTC)
+            now = max(datetime.now(UTC), row.started_at or row.created_at)
             completion = RunCompletion(answer=execution.answer, imported_results=tuple(imported))
             view = ConversationRunV2(
                 **admission.run.model_dump(
@@ -163,25 +176,31 @@ async def finish_run(database, execution: StatisticsRun):
         except Exception:
             pass
         else:
-            row.lifecycle, row.outcome, row.finished_at = "finished", view.outcome, now
-            row.results = [item.model_dump(mode="json") for item in view.results]
-            row.clarification = (
-                view.clarification.model_dump(mode="json") if view.clarification else None
-            )
-            row.completion = completion.model_dump(mode="json")
-            session.add(
-                ConversationMessageRecord(
-                    id=uuid4(),
-                    conversation_id=row.conversation_id,
-                    run_id=row.id,
-                    sequence=conversation.next_sequence,
-                    role="assistant",
-                    content=execution.answer.explanation,
-                    created_at=now,
-                )
-            )
-            conversation.next_sequence += 1
-            await session.execute(delete(RunJob).where(RunJob.run_id == row.id))
+            if claim_id is not None:
+                await finish_attempt(session, row.id, claim_id, execution.terminal_reason)
+            await write_terminal(session, row, conversation, view)
             await session.commit()
             return _admission(row)
     raise RunInputUnavailableError
+
+
+async def write_terminal(session, row, conversation, view):
+    """Shared atomic terminal mutation; caller owns fencing, validation and commit."""
+    now = view.finished_at
+    row.lifecycle, row.outcome, row.finished_at = "finished", view.outcome, now
+    row.results = [item.model_dump(mode="json") for item in view.results]
+    row.clarification = view.clarification.model_dump(mode="json") if view.clarification else None
+    row.completion = view.completion.model_dump(mode="json")
+    session.add(
+        ConversationMessageRecord(
+            id=uuid4(),
+            conversation_id=row.conversation_id,
+            run_id=row.id,
+            sequence=conversation.next_sequence,
+            role="assistant",
+            content=view.completion.answer.explanation,
+            created_at=now,
+        )
+    )
+    conversation.next_sequence += 1
+    await session.execute(delete(RunJob).where(RunJob.run_id == row.id))

@@ -5,13 +5,38 @@ for setup plus testing. Run 42200427469 spent 12m47s on setup and was cancelled
 after only 2m26s of pytest under the previous 15-minute job limit. Test coverage,
 commands, required-check name and branch protection are unchanged.
 
-Latest step: [7.4 clarification and partial results](docs/clarification-and-partial-results.md),
-complete locally on `feature/clarification-partial-results`; required PR tests/
-delivery pending. Step 7.3 is delivered per user pull confirmation. The runner
+Latest step: [7.5 PostgreSQL worker and recovery](docs/durable-worker.md),
+complete locally on `feature/durable-worker-recovery`; final backend/browser
+gates pass, required PR tests/delivery remain pending. Step 7.4 is delivered per user pull
+confirmation. The independent process has bounded claims/heartbeats, original
+session authorization, pre-dispatch evidence, verified result checkpoints and
+fenced terminal writes. Interrupted calls are not automatically replayed.
+Migration 0007 is required through the deployment gate after merge. No Kafka
+publisher, business HTTP endpoint or cloud deployment is included.
+
+Focused worker/CLI gate: 26 passed; three final execution-binding cases passed
+separately. Final current-code backend gate: **1,010 passed, 17 browser tests
+deselected**, 481 warnings, 116.48 seconds. Ruff/format/pip/whitespace checks pass.
+An initial combined gate had 1,022 passes and two existing synthetic-browser-login
+failures (552.46 seconds); both failed cases passed unchanged under safe
+stage/status diagnostics (2 passed, 50.54 seconds). No cause was proven, and no
+authentication rules, assertions, timeouts or retries were changed. Final browser
+group: **17 passed, 1,010 deselected**, 377.63 seconds, with safe temporary login
+stage/status instrumentation only. The final sequential groups cover all 1,027
+current tests; the initial combined run remains recorded as a failure. Treat the
+unreproduced login failures as an unresolved flake risk for required remote CI.
+Added 29 worker/CLI/binding cases overall; no browser test source was changed.
+
+Run/setup/recovery details: [durable worker](docs/durable-worker.md). No commit/push;
+required remote PR tests remain pending. Stop before 7.6.
+
+Previous step: [7.4 clarification and partial results](docs/clarification-and-partial-results.md),
+delivered per user pull confirmation. Step 7.3 is delivered per user pull confirmation. The runner
 ends clarification as needs_input; a reply becomes a new run. Verified partial
 results survive failed explanation. Terminal transactions store assistant history,
 release the busy guard and distinguish original historical citations from new
-computations through conversation-run-v2. No new HTTP route or worker is enabled.
+computations through conversation-run-v2. That step added no HTTP route or worker;
+current worker behavior is documented above.
 
 Migration `0006_run_completion` must pass the existing migration/readiness gate
 after merge. New model-profile-v4 explicitly raises the request reservation from
@@ -25,7 +50,8 @@ adjustments. Ruff/format/pip/whitespace checks pass. Final current-code non-brow
 424 warnings, 71.63 seconds. Added 35 cases overall. No live provider/cloud calls, dependencies,
 commit or push. Required remote PR tests remain pending.
 
-Next after delivery/user instruction: only 7.5 PostgreSQL worker, leases and recovery.
+Step 7.4 delivery is accepted. Current step 7.5 is recorded above; stop before
+7.6 Kafka/outbox publication until separately requested.
 
 Previous step: [6.4 controlled runner integration](docs/controlled-runner-integration.md),
 delivered per user pull confirmation. Step 6.3 is also delivered.

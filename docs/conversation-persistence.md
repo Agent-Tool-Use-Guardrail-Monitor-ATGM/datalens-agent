@@ -1,5 +1,10 @@
 # Conversation history and atomic admission — step 7.2
 
+Current step 7.5 adds [worker execution](durable-worker.md), migration 0007,
+session-bound jobs, leases, local evidence and running result checkpoints. The
+7.2 evidence below describes the initial storage boundary, not current worker
+capabilities. No public conversation/run API is delivered yet.
+
 Branch: `feature/conversation-persistence`. Step 7.1 delivery is accepted from
 the user's pull confirmation. This step adds internal PostgreSQL storage only;
 there is no new public route, model dispatch, worker or Kafka publisher.

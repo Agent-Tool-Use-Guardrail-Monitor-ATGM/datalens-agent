@@ -29,6 +29,7 @@ def create_statistics_session(
     sink: EventSink,
     sequence: Callable[[], int],
     deadline: datetime,
+    checkpoint=None,
 ) -> StatisticsSession:
     """Bind one trusted execution to the real policy and numerical executor.
 
@@ -62,4 +63,5 @@ def create_statistics_session(
         sink=sink,
         sequence=sequence,
         deadline=deadline,
+        checkpoint=checkpoint,
     )

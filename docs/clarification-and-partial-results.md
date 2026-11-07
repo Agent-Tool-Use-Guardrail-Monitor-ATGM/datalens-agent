@@ -1,5 +1,10 @@
 # Clarification and partial-result integration — step 7.4
 
+Step 7.5 adds [leased execution and recovery](durable-worker.md). Claimed terminal
+writes now require the matching live claim, execution/request IDs and original
+browser binding. Migration 0007 supersedes the schema head described below;
+standalone 7.4 behavior remains historical evidence.
+
 Branch: `feature/clarification-partial-results`. This is internal runner/storage
 integration. No new HTTP endpoints, worker process or Kafka publisher are enabled.
 

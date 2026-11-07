@@ -21,7 +21,7 @@ from statistics_agent.persistence.schema import (
 from support.database import apply, run, sandbox, status
 
 BASELINE = "0001_agent_baseline"
-HEAD = "0006_run_completion"
+HEAD = "0007_worker_execution"
 
 
 def test_single_packaged_head_needs_no_settings_or_network(monkeypatch):
@@ -124,6 +124,9 @@ def test_empty_database_upgrades_repeats_downgrades_and_reupgrades(migration_set
                     "agent_runs",
                     "agent_messages",
                     "agent_run_jobs",
+                    "agent_run_attempts",
+                    "agent_run_evidence",
+                    "agent_run_dispatches",
                     "alembic_version",
                     "auth_login_attempts",
                     "auth_sessions",
@@ -175,7 +178,7 @@ def test_failed_upgrade_rolls_back_ddl_and_preserves_previous_revision(
         """
 from alembic import op
 revision = "0002_failure"
-down_revision = "0006_run_completion"
+down_revision = "0007_worker_execution"
 branch_labels = depends_on = None
 def upgrade():
     op.execute("CREATE TABLE rollback_probe (id integer)")
