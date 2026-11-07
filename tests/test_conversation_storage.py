@@ -265,7 +265,13 @@ def test_history_and_replay_survive_new_store_and_connection_pool(migration_sett
             same_identity = owner(roles=["user", "admin"])
             assert (await fresh.get_run(same_identity, first.run.run_id)).run == first.run
             assert "synthetic-storage-key" not in first.configuration.model_dump_json()
-            assert {column.name for column in RunJob.__table__.columns} == {"run_id", "created_at"}
+            assert {column.name for column in RunJob.__table__.columns} == {
+                "run_id",
+                "created_at",
+                "auth_session_ref",
+                "claim_id",
+                "lease_expires_at",
+            }
 
     run(exercise())
 

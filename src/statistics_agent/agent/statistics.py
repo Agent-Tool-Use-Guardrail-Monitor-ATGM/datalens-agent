@@ -71,6 +71,7 @@ class StatisticsSession:
         sequence: Callable[[], int],
         deadline: datetime,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        checkpoint: Callable[[AgentContext, ToolResult], Awaitable[None]] | None = None,
     ):
         if (
             len(bindings) > 32
@@ -100,6 +101,7 @@ class StatisticsSession:
         self._profile = adapter.profile
         self._adapter = adapter
         self._sleep = sleep
+        self._checkpoint = checkpoint
         self._results = []
         self._state = AgentState(
             context=context,
@@ -474,6 +476,8 @@ class StatisticsSession:
             result = ToolResult(tool_call_id=proposal.tool_call_id, status="timed_out")
         except Exception:
             result = ToolResult(tool_call_id=proposal.tool_call_id, status="failed")
+        if result.status == "completed" and self._checkpoint is not None:
+            await self._checkpoint(context, result)
         await self._outcome(proposal, result.status, "execution_result", evaluation=evaluation)
         self._results.append(result)
         if result.artifact is not None and result.artifact not in self._state.artifacts:

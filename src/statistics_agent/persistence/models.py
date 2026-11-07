@@ -276,10 +276,71 @@ class ConversationMessageRecord(Base):
 
 
 class RunJob(Base):
-    """Durable pending identity only; leases/claims are introduced in 7.5."""
+    """Pending work and bounded lease; credentials remain in encrypted auth storage."""
 
     __tablename__ = "agent_run_jobs"
     run_id: Mapped[UUID] = mapped_column(
         Uuid, ForeignKey("agent_runs.id", ondelete="CASCADE"), primary_key=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    auth_session_ref: Mapped[UUID | None] = mapped_column(Uuid)
+    claim_id: Mapped[UUID | None] = mapped_column(Uuid)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (
+        CheckConstraint(
+            "(claim_id IS NULL) = (lease_expires_at IS NULL)",
+            name="ck_job_lease",
+        ),
+        Index("ix_job_lease", "lease_expires_at"),
+        Index("ix_job_pending", "created_at", "run_id", postgresql_where=text("claim_id IS NULL")),
+    )
+
+
+class RunAttemptRecord(Base):
+    __tablename__ = "agent_run_attempts"
+    __table_args__ = (
+        UniqueConstraint("run_id", name="uq_attempt_run"),
+        CheckConstraint("next_sequence BETWEEN 1 AND 1025", name="ck_attempt_sequence"),
+    )
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    run_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("agent_runs.id", ondelete="CASCADE"))
+    request_id: Mapped[UUID] = mapped_column(Uuid)
+    next_sequence: Mapped[int] = mapped_column(default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reason: Mapped[str | None] = mapped_column(String(64))
+
+
+class RunEvidence(Base):
+    __tablename__ = "agent_run_evidence"
+    __table_args__ = (
+        UniqueConstraint("attempt_id", "sequence", name="uq_evidence_sequence"),
+        CheckConstraint(
+            "sequence BETWEEN 1 AND 1024 AND octet_length(envelope::text) <= 32768",
+            name="ck_evidence_bounds",
+        ),
+    )
+    event_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    attempt_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("agent_run_attempts.id", ondelete="CASCADE")
+    )
+    sequence: Mapped[int]
+    envelope: Mapped[dict] = mapped_column(JSONB)
+
+
+class RunDispatch(Base):
+    __tablename__ = "agent_run_dispatches"
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('model','tool') AND attempt_index BETWEEN 1 AND 4 "
+            "AND outcome IN ('pending','observed','unknown')",
+            name="ck_dispatch_state",
+        ),
+    )
+    attempt_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey("agent_run_attempts.id", ondelete="CASCADE"), primary_key=True
+    )
+    kind: Mapped[str] = mapped_column(String(5), primary_key=True)
+    operation_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    attempt_index: Mapped[int] = mapped_column(primary_key=True)
+    outcome: Mapped[str] = mapped_column(String(8))

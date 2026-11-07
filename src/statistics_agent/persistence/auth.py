@@ -240,6 +240,17 @@ class AuthStore:
             await session.commit()
             return result.rowcount == 1
 
+    async def read_session_id(self, session_id: UUID) -> StoredSession | None:
+        """Internal worker lookup; the ID alone never authenticates or extends idle time."""
+        async with self._database.session() as session:
+            row = await session.scalar(
+                select(BrowserSession).where(
+                    BrowserSession.id == session_id,
+                    *self._active(instant(None)),
+                )
+            )
+        return None if row is None else self._snapshot(row)
+
     async def replace_credentials(
         self,
         session_id: UUID,

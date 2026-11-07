@@ -5,7 +5,7 @@ import hashlib
 import json
 import math
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -38,7 +38,9 @@ class ModelAdapter:
         *,
         transport: httpx.AsyncBaseTransport | None = None,
         limiter: ModelLimiter | None = None,
+        before_dispatch: Callable[[ProviderRequest], Awaitable[None]] | None = None,
     ):
+        self._before_dispatch = before_dispatch
         self.profile = settings.resolve()
         self._key = settings.api_key
         self._sink = sink
@@ -145,6 +147,8 @@ class ModelAdapter:
                 raise TimeoutError
             async with asyncio.timeout(budget):
                 async with self._limiter.slot():
+                    if self._before_dispatch is not None:
+                        await self._before_dispatch(request)
                     sent = True
                     async with httpx.AsyncClient(
                         transport=self._transport,

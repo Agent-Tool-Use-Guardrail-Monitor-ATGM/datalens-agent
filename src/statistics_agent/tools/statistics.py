@@ -2,11 +2,13 @@
 
 import json
 from functools import partial
+from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import ValidationError
 
 from statistics_agent.agent.tool_schema import ToolBinding
 from statistics_agent.contracts.agent import AgentContext, ToolProposal, ToolResult
+from statistics_agent.contracts.common import ConfigurationReference
 from statistics_agent.contracts.datasets import (
     AggregateStatisticsArguments,
     CorrelateColumnsArguments,
@@ -31,6 +33,12 @@ from statistics_agent.tools.descriptive import (
 )
 from statistics_agent.tools.observations import MAX_SUMMARY_BYTES as MAX_SUMMARY_BYTES
 from statistics_agent.tools.observations import statistics_summary
+
+STATISTICS_TOOLSET = ConfigurationReference(
+    config_id=uuid5(NAMESPACE_URL, "datalens:statistics-tools:v1"),
+    version="statistics-tools-v1",
+)
+
 
 STATISTICS_BINDINGS = (
     ToolBinding(

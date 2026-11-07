@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from pydantic import model_validator
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from statistics_agent.contracts.agent import AgentVersions, PromptDefinition
 from statistics_agent.contracts.auth import AuthorizedPrincipal
@@ -311,7 +311,8 @@ class ConversationStore:
                 )
                 if artifact is None:
                     raise RunInputUnavailableError
-            now, run_id = datetime.now(UTC), uuid4()
+            now = await session.scalar(select(func.clock_timestamp()))
+            run_id = uuid4()
             row = RunRecord(
                 id=run_id,
                 conversation_id=conversation_id,
@@ -352,7 +353,13 @@ class ConversationStore:
                     created_at=now,
                 )
             )
-            session.add(RunJob(run_id=run_id, created_at=now))
+            session.add(
+                RunJob(
+                    run_id=run_id,
+                    created_at=now,
+                    auth_session_ref=principal.auth_session_ref,
+                )
+            )
             conversation.next_sequence += 1
             result = _admission(row)
             await session.commit()
