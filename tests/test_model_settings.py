@@ -4,7 +4,7 @@ import traceback
 
 import pytest
 
-from statistics_agent.core.model_settings import load_model_settings
+from statistics_agent.core.model_settings import ModelProfile, load_model_settings
 from statistics_agent.core.settings import ConfigurationError
 
 
@@ -42,6 +42,21 @@ def test_groq_default_and_secret_exclusion(monkeypatch):
     profile.require()
     with pytest.raises(ConfigurationError):
         profile.require(structured_output=True)
+
+
+def test_v4_registry_budget_and_old_profile_snapshots_remain_explicit(monkeypatch):
+    monkeypatch.setenv("SERVICE_MODEL_API_KEY", "synthetic-secret")
+    profile = load_model_settings().resolve()
+    assert profile.configuration_version == "model-profile-v4"
+    assert profile.input_token_budget == 6144
+    assert profile.run_input_budget == 32768
+    old = profile.model_dump() | {
+        "configuration_version": "model-profile-v3",
+        "input_token_budget": 4096,
+    }
+    legacy = ModelProfile.model_validate(old)
+    assert legacy.input_token_budget == 4096
+    assert legacy.reference != profile.reference
 
 
 def test_azure_endpoint_and_reference_identity(monkeypatch):

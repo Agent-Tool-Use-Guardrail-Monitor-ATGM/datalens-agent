@@ -12,6 +12,34 @@ from statistics_agent.contracts.datasets import DescribeColumnsArguments
 from statistics_agent.tools.statistics import STATISTICS_BINDINGS
 
 
+def test_nested_clarification_definitions_are_inlined_without_losing_fields():
+    from statistics_agent.contracts.clarification import RequestClarification
+
+    schema = model_tool_schema(RequestClarification.model_json_schema())
+    assert "$defs" not in schema
+    assert schema["required"] == ["question"]
+    option = schema["properties"]["options"]["items"]
+    assert option["required"] == ["key", "text"]
+    assert option["additionalProperties"] is False
+    assert option["properties"]["key"]["pattern"] == "^[A-Za-z0-9_.-]+$"
+
+
+def test_recursive_guidance_keeps_resolvable_definitions():
+    schema = {
+        "type": "object",
+        "properties": {"node": {"$ref": "#/$defs/Node"}},
+        "$defs": {
+            "Node": {
+                "type": "object",
+                "properties": {
+                    "child": {"$ref": "#/$defs/Node"},
+                },
+            }
+        },
+    }
+    assert model_tool_schema(schema) == schema
+
+
 def test_schema_compaction_preserves_types_enums_required_and_real_field_names():
     schema = {
         "title": "Example",

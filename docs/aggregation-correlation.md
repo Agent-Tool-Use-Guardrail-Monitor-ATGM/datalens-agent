@@ -1,5 +1,9 @@
 # Aggregation and correlation — step 5.6
 
+Current step 7.4 explicitly versions the per-request reservation to 6,144 for new
+model-profile-v4 configurations. The 4,096 limit in the evidence below describes
+the prior implementation. [Current behavior](clarification-and-partial-results.md).
+
 Updated: 5 November 2026. **Complete locally on feature/aggregation-correlation;
 required PR tests/delivery pending.** Step 5.5 delivery is accepted from the
 user's pull confirmation. All four numerical bindings now dispatch through

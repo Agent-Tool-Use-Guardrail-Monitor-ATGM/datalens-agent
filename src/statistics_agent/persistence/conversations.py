@@ -16,6 +16,7 @@ from statistics_agent.contracts.conversations import (
     Conversation,
     ConversationMessage,
     ConversationRun,
+    ConversationRunV2,
     DatasetSelection,
     DatasetSnapshot,
     PageRequest,
@@ -78,7 +79,7 @@ class AdmissionConfiguration(Contract):
 
 @dataclass(frozen=True)
 class StoredAdmission:
-    run: ConversationRun
+    run: ConversationRun | ConversationRunV2
     submission: RunSubmission = field(repr=False)
     configuration: AdmissionConfiguration = field(repr=False)
     datasets: tuple[DatasetMetadata, ...] = field(repr=False)
@@ -94,7 +95,9 @@ def _conversation(row):
 def _admission(row, *, replayed=False):
     configuration = AdmissionConfiguration.model_validate_json(json.dumps(row.configuration))
     datasets = tuple(DatasetMetadata.model_validate(item) for item in row.datasets)
-    view = ConversationRun(
+    contract = ConversationRunV2 if row.completion is not None else ConversationRun
+    completion = {"completion": row.completion} if row.completion is not None else {}
+    view = contract(
         run_id=row.id,
         conversation_id=row.conversation_id,
         lifecycle=row.lifecycle,
@@ -108,6 +111,7 @@ def _admission(row, *, replayed=False):
         ),
         results=row.results,
         clarification=row.clarification,
+        **completion,
     )
     return StoredAdmission(
         view,

@@ -24,6 +24,7 @@ from statistics_agent.contracts.agent import (
     AgentMessage,
     AgentState,
     AgentVersions,
+    ClarificationAnswer,
     EventSink,
     ModelAttempt,
     ProviderFailure,
@@ -37,6 +38,7 @@ from statistics_agent.contracts.agent import (
 from statistics_agent.contracts.agent import DatasetSummary as DatasetSummary
 from statistics_agent.contracts.agent import StatisticsAnswer as StatisticsAnswer
 from statistics_agent.contracts.agent import StatisticsRun as StatisticsRun
+from statistics_agent.contracts.clarification import RequestClarification
 from statistics_agent.contracts.common import ConfigurationReference
 from statistics_agent.contracts.context import PreparedContext
 from statistics_agent.contracts.events import EventEnvelope
@@ -77,6 +79,13 @@ class StatisticsSession:
         ):
             raise AdapterError("Invalid tool registry")
         self._schemas = [b.schema() for b in bindings]
+        self._schemas.append(
+            ToolBinding(
+                "request_clarification",
+                "Ask for missing dataset, column or operation; end this run.",
+                RequestClarification,
+            ).schema()
+        )
         self._schemas.append(
             ToolBinding(
                 FINALIZE,
@@ -400,6 +409,24 @@ class StatisticsSession:
             results=tuple(self._results),
         )
 
+    async def _clarify(self, proposal: ToolProposal) -> StatisticsRun:
+        if not await self._has_access():
+            await self._outcome(proposal, "failed", "access_denied")
+            return self._finish("incomplete", "Access is unavailable for this operation.")
+        try:
+            value = RequestClarification.model_validate_json(proposal.raw_arguments, strict=True)
+        except ValidationError:
+            await self._outcome(proposal, "failed", "invalid_clarification")
+            return self._finish("incomplete", "The model did not return a valid clarification.")
+        await self._outcome(proposal, "completed", "clarification_validated")
+        self._state = self._state.model_copy(update={"pending_tool_calls": ()})
+        return StatisticsRun(
+            terminal_reason="needs_input",
+            answer=ClarificationAnswer(explanation=value.question, clarification=value),
+            state=self._state,
+            results=tuple(self._results),
+        )
+
     async def _execute_tool(self, proposal: ToolProposal) -> StatisticsRun | None:
         context = self._state.context
         evaluation = PolicyEvaluation(
@@ -549,13 +576,15 @@ class StatisticsSession:
                 return self._finish(
                     "incomplete", "The tool requests have invalid correlation identities."
                 )
-            if any(p.name == FINALIZE for p in response.proposals):
+            if any(p.name in CONTROL_FUNCTIONS for p in response.proposals):
                 if len(response.proposals) != 1:
                     for proposal in response.proposals:
                         await self._outcome(proposal, "failed", "mixed_finalization_batch")
                     return self._finish(
                         "incomplete", "Finalization cannot be combined with execution."
                     )
+                if response.proposals[0].name == "request_clarification":
+                    return await self._clarify(response.proposals[0])
                 return await self._finalize(response.proposals[0])
             for proposal in response.proposals:
                 stopped = await self._execute_tool(proposal)

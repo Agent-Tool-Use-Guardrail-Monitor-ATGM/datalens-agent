@@ -5,15 +5,27 @@ for setup plus testing. Run 42200427469 spent 12m47s on setup and was cancelled
 after only 2m26s of pytest under the previous 15-minute job limit. Test coverage,
 commands, required-check name and branch protection are unchanged.
 
-Latest step: [7.3 bounded conversation context](docs/bounded-conversation-context.md),
-complete locally on `feature/bounded-conversation-context`; required PR tests/
-delivery pending. Step 7.2 is delivered per user pull confirmation. The internal
-runner can prepare owned stored context, omit optional old turns within exact
-request/schema budgets, and use verified historical results through run-local
-citation mappings. Legacy finalizer provenance checks remain enforced.
-Verification: **946 passed, 17 browser tests deselected**; Ruff/format/pip/whitespace
-checks pass. No new migration, route or worker. Next after delivery/user
-instruction: only 7.4 clarification and partial-result integration.
+Latest step: [7.4 clarification and partial results](docs/clarification-and-partial-results.md),
+complete locally on `feature/clarification-partial-results`; required PR tests/
+delivery pending. Step 7.3 is delivered per user pull confirmation. The runner
+ends clarification as needs_input; a reply becomes a new run. Verified partial
+results survive failed explanation. Terminal transactions store assistant history,
+release the busy guard and distinguish original historical citations from new
+computations through conversation-run-v2. No new HTTP route or worker is enabled.
+
+Migration `0006_run_completion` must pass the existing migration/readiness gate
+after merge. New model-profile-v4 explicitly raises the request reservation from
+4,096 to 6,144 for the full six-function registry; total run input stays 32,768.
+Stored v3 profiles remain readable with their original limits.
+
+Full regression gate: **995 passed, no skips**, including 17 browser tests,
+415 upstream warnings, 386.63 seconds. Final focused writer/control/contract gate:
+**74 passed**, including three additional cases and the final lock/validation
+adjustments. Ruff/format/pip/whitespace checks pass. Final current-code non-browser gate: **981 passed, 17 browser tests deselected**,
+424 warnings, 71.63 seconds. Added 35 cases overall. No live provider/cloud calls, dependencies,
+commit or push. Required remote PR tests remain pending.
+
+Next after delivery/user instruction: only 7.5 PostgreSQL worker, leases and recovery.
 
 Previous step: [6.4 controlled runner integration](docs/controlled-runner-integration.md),
 delivered per user pull confirmation. Step 6.3 is also delivered.
@@ -1059,7 +1071,8 @@ plan 6 and business APIs/jobs/Kafka delivery remain plan 7.
 Prompt statistics-v3, lean provider schemas and structured observations remove
 redundant wire overhead. Original Pydantic bounds and all numerical values remain
 authoritative; full provenance/version metadata stays in PostgreSQL artifacts.
-The 4096-unit request cap is unchanged. Some wide/long transcripts still exceed
+That step retained the 4096-unit request cap. Step 7.4 explicitly versions new
+profiles to a 6144-unit cap; total run input is unchanged. Wide/long transcripts can still exceed
 it; tests verify stopping before dispatch while preserving existing artifacts.
 No frontend route or new live model compatibility is claimed.
 

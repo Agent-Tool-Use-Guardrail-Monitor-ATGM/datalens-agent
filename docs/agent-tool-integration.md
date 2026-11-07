@@ -1,5 +1,9 @@
 # Agent/tool integration — step 5.7
 
+Current step 7.4 explicitly versions the per-request reservation to 6,144 for new
+model-profile-v4 configurations. The 4,096 limit in the evidence below describes
+the prior implementation. [Current behavior](clarification-and-partial-results.md).
+
 Updated: 5 November 2026. Complete locally; required PR tests/delivery pending. Branch: `test/agent-tool-integration`.
 
 ## Available composition

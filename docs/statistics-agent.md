@@ -37,7 +37,9 @@ DatasetSummary must be supplied after owner checks; it is not itself an ownershi
 proof. At most 16 datasets and 128 columns each are accepted. Backend tools will
 load authorized data using those references in plan 5.
 
-The current PROMPT is version `statistics-v3`; response schema is `statistics-answer-v1`.
+The current PROMPT is version `statistics-v4`. Numerical final answers retain
+`statistics-answer-v1`; clarification uses the separate needs_input answer value.
+See [step 7.4](clarification-and-partial-results.md) for terminal storage and citations.
 It instructs the model to treat supplied content as untrusted data, use only the
 declared tools and never invent measurements. Model messages contain instructions,
 question, dataset metadata and bounded tool observations. Issuer/subject, auth
@@ -124,7 +126,8 @@ The advertised reference enum is constrained to successful results already seen
 in this run; local provenance validation remains authoritative. Further numeric
 calculations remain allowed, subject to unchanged history/input limits. The
 three-round regression fixture now fits after step 5.7 request compaction.
-The 4096-unit cap still rejects oversized initial/accumulated requests; verified
+Step 7.4 explicitly replaces the v3 4096-unit cap with a versioned v4 6144-unit
+cap. Both still reject oversized initial/accumulated requests; verified
 artifacts survive a later stop. See [full tool integration](agent-tool-integration.md).
 See [provider verification](provider-verification.md) for current evidence; the
 preceding step 4.4 counts and prompt version describe historical evidence.

@@ -197,9 +197,15 @@ class RunRecord(Base):
         ),
         CheckConstraint(
             "jsonb_typeof(results) = 'array' AND jsonb_array_length(results) <= 128 AND "
-            "(outcome IS DISTINCT FROM 'completed' OR jsonb_array_length(results) > 0) AND "
+            "(outcome IS DISTINCT FROM 'completed' OR jsonb_array_length(results) > 0 OR "
+            "coalesce(jsonb_array_length(completion->'imported_results'),0) > 0) AND "
             "(lifecycle <> 'queued' OR jsonb_array_length(results) = 0)",
             name="ck_run_results",
+        ),
+        CheckConstraint(
+            "completion IS NULL OR (lifecycle = 'finished' AND "
+            "jsonb_typeof(completion) = 'object' AND octet_length(completion::text) <= 262144)",
+            name="ck_run_completion",
         ),
         CheckConstraint(
             "jsonb_typeof(datasets) = 'array' AND jsonb_array_length(datasets) <= 16 AND "
@@ -240,6 +246,7 @@ class RunRecord(Base):
     datasets: Mapped[list] = mapped_column(JSONB)
     results: Mapped[list] = mapped_column(JSONB)
     clarification: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    completion: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
 
 
 class ConversationMessageRecord(Base):

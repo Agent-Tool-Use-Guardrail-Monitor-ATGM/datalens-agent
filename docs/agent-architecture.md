@@ -146,7 +146,9 @@ summaries within the existing reservation budget. Measure the entire payload,
 including schemas, before dispatch. Drop optional old context deterministically;
 never silently drop the current question, required schema, or claim an omitted
 prior result was considered. Ask for clarification or stop on unavoidable limits.
-Do not silently raise the existing 4096-unit per-request cap. Plan 7 must test
+Step 7.4 explicitly versions the request cap to 6,144 units (model-profile-v4);
+the old v3 cap remains 4,096. See [budget evidence](clarification-and-partial-results.md).
+Do not silently raise either pinned cap. Plan 7 must test
 the full tool registry/context, including multi-dataset follow-ups, against it.
 
 Stored history and model context are different views. Paginate history for the

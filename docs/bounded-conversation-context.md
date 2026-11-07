@@ -114,9 +114,12 @@ provenance or weakening v1 guards. Public HTTP result/history mapping is not
 delivered here. The worker must prepare immediately for its execution attempt,
 handle preparation failures, persist outcomes and retain current authorization.
 
-RequestClarification remains a contract only until 7.4 registers its behavior.
-When adding a control, include its schema in this same reservation path; do not
-raise the request cap or invent a separate smaller registry for estimation.
+Step 7.4 now registers RequestClarification and adds versioned terminal citation
+storage. Its full schema uses this same reservation path; no smaller estimation
+registry is substituted. Normal six-function requests exceeded the original cap,
+so the [7.4 budget revision](clarification-and-partial-results.md) explicitly
+versions new profiles to a 6,144-unit cap. This supersedes the earlier handoff
+expectation of retaining 4,096; stored v3 profiles keep their original limit.
 
 ## Verification and delivery
 

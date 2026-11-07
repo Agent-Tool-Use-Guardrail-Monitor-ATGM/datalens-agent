@@ -21,14 +21,14 @@ class ModelProfile(Contract):
     model: str
     base_url: str
     api_style: Literal["chat_completions_v1"] = "chat_completions_v1"
-    configuration_version: Literal["model-profile-v3"] = "model-profile-v3"
+    configuration_version: Literal["model-profile-v3", "model-profile-v4"] = "model-profile-v4"
     temperature: Literal[0.6] | None = None
     reasoning_effort: Literal["low"] | None = None
     tool_calling: bool = True
     json_mode: bool = True
     json_schema: bool = False
     parallel_tools: bool = False
-    input_token_budget: int = 4096
+    input_token_budget: int = 6144
     max_output_tokens: int = 1024
     timeout_seconds: float
     max_retries: int

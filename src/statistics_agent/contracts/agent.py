@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import AwareDatetime, Field, StringConstraints, model_validator
 
 from statistics_agent.contracts.auth import AuthorizedPrincipal
+from statistics_agent.contracts.clarification import RequestClarification
 from statistics_agent.contracts.common import (
     ArtifactReference,
     ConfigurationReference,
@@ -231,8 +232,14 @@ class StatisticsAnswer(Contract):
         return self
 
 
+class ClarificationAnswer(Contract):
+    status: Literal["needs_input"] = "needs_input"
+    explanation: BoundedText = Field(min_length=1, repr=False)
+    clarification: RequestClarification = Field(repr=False)
+
+
 class StatisticsRun(Contract):
     terminal_reason: ShortReference = "unspecified"
-    answer: StatisticsAnswer
+    answer: StatisticsAnswer | ClarificationAnswer
     state: AgentState = Field(repr=False)
     results: tuple[ToolResult, ...] = Field(default=(), max_length=128, repr=False)
