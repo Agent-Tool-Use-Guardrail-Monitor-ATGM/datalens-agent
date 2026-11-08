@@ -39,8 +39,10 @@ class ModelAdapter:
         transport: httpx.AsyncBaseTransport | None = None,
         limiter: ModelLimiter | None = None,
         before_dispatch: Callable[[ProviderRequest], Awaitable[None]] | None = None,
+        observe_proposal: Callable | None = None,
     ):
         self._before_dispatch = before_dispatch
+        self._observe_proposal = observe_proposal
         self.profile = settings.resolve()
         self._key = settings.api_key
         self._sink = sink
@@ -268,16 +270,15 @@ class ModelAdapter:
         for call_id, raw in observed:
             # Evidence before name lookup, argument parsing or framework filtering.
             encoded = json.dumps(raw, ensure_ascii=True, sort_keys=True).encode()
-            await self._emit(
-                request,
-                "tool_call.requested",
-                {
-                    "tool_call_id": str(call_id),
-                    "proposal_sha256": hashlib.sha256(encoded).hexdigest(),
-                    "proposal_bytes": len(encoded),
-                    "evidence_mode": "digest_only",
-                },
-            )
+            data = {
+                "tool_call_id": str(call_id),
+                "proposal_sha256": hashlib.sha256(encoded).hexdigest(),
+                "proposal_bytes": len(encoded),
+                "evidence_mode": "digest_only",
+            }
+            if self._observe_proposal is not None:
+                data = self._observe_proposal(raw, call_id)
+            await self._emit(request, "tool_call.requested", data)
         for call_id, raw in observed:
             if not isinstance(raw, dict) or not isinstance(raw.get("function"), dict):
                 raise ValueError

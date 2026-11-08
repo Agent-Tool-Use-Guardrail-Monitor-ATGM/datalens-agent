@@ -186,6 +186,9 @@ async def finish_run(database, execution: StatisticsRun, *, claim_id=None):
 
 async def write_terminal(session, row, conversation, view):
     """Shared atomic terminal mutation; caller owns fencing, validation and commit."""
+    from statistics_agent.persistence.outbox import end_session
+
+    await end_session(session, row, view)
     now = view.finished_at
     row.lifecycle, row.outcome, row.finished_at = "finished", view.outcome, now
     row.results = [item.model_dump(mode="json") for item in view.results]

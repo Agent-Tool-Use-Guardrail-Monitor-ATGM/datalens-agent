@@ -21,9 +21,14 @@ from statistics_agent.persistence.models import (
     DatasetArtifact,
     RunAttemptRecord,
     RunDispatch,
-    RunEvidence,
     RunJob,
     RunRecord,
+)
+from statistics_agent.persistence.outbox import (
+    PAYLOAD_VERSION,
+    ensure_capacity,
+    record_event,
+    start_session,
 )
 
 
@@ -135,8 +140,12 @@ class JobStore:
                     request_id=request_id,
                     next_sequence=1,
                     created_at=now,
+                    telemetry_version=PAYLOAD_VERSION,
                 )
             )
+            await session.flush()
+            attempt = await session.get(RunAttemptRecord, attempt_id)
+            await start_session(session, attempt, row, admitted)
             await session.commit()
             return JobClaim(
                 row.id,
@@ -163,6 +172,7 @@ class JobStore:
             raise LeaseLost
         async with self.database.session() as session:
             await require_lease(session, claim.run_id, claim.attempt_id)
+            await ensure_capacity(session)
             session.add(
                 RunDispatch(
                     attempt_id=claim.attempt_id,
@@ -185,46 +195,40 @@ class JobStore:
         async with self.database.session() as session:
             await require_lease(session, claim.run_id, claim.attempt_id)
             attempt = await session.get(RunAttemptRecord, claim.attempt_id, with_for_update=True)
-            if event.sequence != attempt.next_sequence or event.sequence > 1024:
-                raise ValueError("Worker evidence sequence unavailable")
-            attempt.next_sequence += 1
-            session.add(
-                RunEvidence(
-                    event_id=event.event_id,
-                    attempt_id=claim.attempt_id,
-                    sequence=event.sequence,
-                    envelope=event.model_dump(mode="json"),
-                )
-            )
-            kind = event.event_type
-            if kind == EventType.TOOL_CALL_REQUESTED:
-                session.add(
-                    RunDispatch(
-                        attempt_id=claim.attempt_id,
-                        kind="tool",
-                        operation_id=UUID(event.data["tool_call_id"]),
-                        attempt_index=1,
-                        outcome="pending",
-                    )
-                )
-            else:
-                is_model = kind in {EventType.MODEL_CALL_COMPLETED, EventType.MODEL_CALL_FAILED}
-                operation_id = event.data.get("model_call_id" if is_model else "tool_call_id")
-                if operation_id is not None:
-                    await session.execute(
-                        update(RunDispatch)
-                        .where(
-                            RunDispatch.attempt_id == claim.attempt_id,
-                            RunDispatch.kind == ("model" if is_model else "tool"),
-                            RunDispatch.operation_id == UUID(operation_id),
-                            RunDispatch.attempt_index
-                            == (event.data["attempt_index"] if is_model else 1),
-                        )
-                        .values(outcome="observed")
-                    )
+            await self._record(session, attempt, event)
             await session.commit()
 
-    async def checkpoint(self, claim, context, result):
+    @staticmethod
+    async def _record(session, attempt, event):
+        await record_event(session, attempt, event)
+        kind = event.event_type
+        if kind == EventType.TOOL_CALL_REQUESTED:
+            session.add(
+                RunDispatch(
+                    attempt_id=attempt.id,
+                    kind="tool",
+                    operation_id=UUID(event.data["tool_call_id"]),
+                    attempt_index=1,
+                    outcome="pending",
+                )
+            )
+        else:
+            is_model = kind in {EventType.MODEL_CALL_COMPLETED, EventType.MODEL_CALL_FAILED}
+            operation_id = event.data.get("model_call_id" if is_model else "tool_call_id")
+            if operation_id is not None:
+                await session.execute(
+                    update(RunDispatch)
+                    .where(
+                        RunDispatch.attempt_id == attempt.id,
+                        RunDispatch.kind == ("model" if is_model else "tool"),
+                        RunDispatch.operation_id == UUID(operation_id),
+                        RunDispatch.attempt_index
+                        == (event.data["attempt_index"] if is_model else 1),
+                    )
+                    .values(outcome="observed")
+                )
+
+    async def checkpoint(self, claim, context, result, *, event=None):
         if (
             context.run_id != claim.run_id
             or context.session_id != claim.attempt_id
@@ -270,6 +274,20 @@ class JobStore:
             ):
                 raise ValueError("Worker result checkpoint limit")
             row.results = [*row.results, reference.model_dump(mode="json")]
+            if event is not None:
+                event = EventEnvelope.model_validate_json(event.model_dump_json())
+                if (
+                    event.run_id != claim.run_id
+                    or event.session_id != claim.attempt_id
+                    or event.request_id != claim.request_id
+                    or event.event_type != EventType.TOOL_CALL_COMPLETED
+                    or event.data.get("tool_call_id") != str(result.tool_call_id)
+                ):
+                    raise LeaseLost
+                attempt = await session.get(
+                    RunAttemptRecord, claim.attempt_id, with_for_update=True
+                )
+                await self._record(session, attempt, event)
             await session.commit()
 
     async def interrupt(self, claim, reason="interrupted", *, expired=False):

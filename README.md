@@ -1,11 +1,24 @@
 # DataLens statistics-agent development
 
+Step 7.6 is in progress on `feature/kafka-event-outbox`:
+[Kafka telemetry delivery](docs/kafka-telemetry.md). Kafka is team-owned; this
+repository provisions no broker or topic. Pending events stay in PostgreSQL
+until the publisher can deliver them to `agent.events.v1`. Mocked delivery tests
+replace the removed broker fixture and CI provisioning. Backlog-capacity behavior
+still needs agreement; this step is not signed off.
+
+Published-event retention: `python -m statistics_agent.cleanup --env-file .env`
+removes at most 1,000 outbox rows published more than 7 days ago. Pending events
+and execution history are preserved. The command is ready for an external hourly
+schedule; no scheduler or cloud resource is provisioned here. See the telemetry
+document for retention/limit options and verification.
+
 CI timeout follow-up (6 November 2026): the required `tests` job allows 30 minutes
 for setup plus testing. Run 42200427469 spent 12m47s on setup and was cancelled
 after only 2m26s of pytest under the previous 15-minute job limit. Test coverage,
 commands, required-check name and branch protection are unchanged.
 
-Latest step: [7.5 PostgreSQL worker and recovery](docs/durable-worker.md),
+Previous step: [7.5 PostgreSQL worker and recovery](docs/durable-worker.md),
 complete locally on `feature/durable-worker-recovery`; final backend/browser
 gates pass, required PR tests/delivery remain pending. Step 7.4 is delivered per user pull
 confirmation. The independent process has bounded claims/heartbeats, original
