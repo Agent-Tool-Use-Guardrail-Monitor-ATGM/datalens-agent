@@ -1,11 +1,36 @@
 # DataLens statistics-agent development
 
-Step 7.6 is in progress on `feature/kafka-event-outbox`:
+Latest requested step: **3.8.1 minimal user-profile foundation**, on
+`fix/bearer-authentication-migration` (renamed before push). The approved
+[bearer-authentication migration](docs/bearer-authentication-migration.md) changes
+the target architecture to frontend PKCE and request JWT validation. This first
+additive step introduces migration `0009_user_profiles`, display contracts and an
+internal profile store. It does not change HTTP authentication or worker behavior;
+existing login/session/token storage remains operational until later cutover.
+
+Profiles are keyed by exact issuer/subject, with nullable display name, username,
+email and a database update timestamp. They contain no passwords, roles, tokens
+or login status, and cannot grant access. There is no profile HTTP endpoint or
+automatic synchronization yet. Existing resource ownership and history are unchanged.
+Deploy through the existing migration gate; application rollback can leave the
+unused additive table in place. Test downgrade deletes profile rows only.
+
+3.8.1 verification: focused gate **55 passed**; full non-browser regression
+**1,077 passed, 17 browser tests deselected**, 514 warnings, 149.66 seconds.
+Ruff/format/dependency/whitespace checks pass. Browser tests were not rerun.
+Required PR `tests` and delivery remain pending. Stop before 3.8.2.
+
+Step 7.6 delivery is accepted from the user pull confirmation. The existing
+pending-event limit decision remains open; cleanup scheduling is paused while
+the authentication boundary is migrated. No identity/frontend runtime change or
+cloud resource is included in this branch. Parent planning files are outside PR.
+
+Previous step 7.6, originally prepared on `feature/kafka-event-outbox`:
 [Kafka telemetry delivery](docs/kafka-telemetry.md). Kafka is team-owned; this
 repository provisions no broker or topic. Pending events stay in PostgreSQL
 until the publisher can deliver them to `agent.events.v1`. Mocked delivery tests
 replace the removed broker fixture and CI provisioning. Backlog-capacity behavior
-still needs agreement; this step is not signed off.
+still needs agreement before operational sign-off.
 
 Published-event retention: `python -m statistics_agent.cleanup --env-file .env`
 removes at most 1,000 outbox rows published more than 7 days ago. Pending events
