@@ -21,13 +21,57 @@ from statistics_agent.persistence.schema import (
 from support.database import apply, run, sandbox, status
 
 BASELINE = "0001_agent_baseline"
-HEAD = "0008_event_outbox"
+HEAD = "0009_user_profiles"
 
 
 def test_single_packaged_head_needs_no_settings_or_network(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     assert expected_heads() == (HEAD,)
     assert migration_config().get_main_option("sqlalchemy.url") is None
+
+
+@pytest.mark.postgres
+def test_profile_upgrade_and_rollback_preserve_existing_login_records(migration_settings):
+    async def exercise():
+        async with sandbox(migration_settings) as (database, schema, config):
+            await apply(database, schema, config, "upgrade", "0008_event_outbox")
+            async with database.session() as session:
+                await session.execute(
+                    text(f"""
+                    INSERT INTO {schema}.auth_login_attempts
+                    (id, state_hash, browser_hash, issuer, return_target,
+                     nonce_ciphertext, verifier_ciphertext, created_at, expires_at)
+                    VALUES ('00000000-0000-0000-0000-000000000001',
+                            repeat('a', 64), repeat('b', 64),
+                            'https://identity.example/realms/datalens', '/',
+                            'synthetic-encrypted-nonce', 'synthetic-encrypted-verifier',
+                            now(), now() + interval '5 minutes')
+                """)
+                )
+                await session.commit()
+                previous = await session.scalar(
+                    text(f"SELECT to_jsonb(t) FROM {schema}.auth_login_attempts t")
+                )
+            await apply(database, schema, config, "upgrade", "head")
+            await apply(database, schema, config, "downgrade", "0008_event_outbox")
+            async with database.session() as session:
+                assert (
+                    await session.scalar(
+                        text(f"SELECT to_jsonb(t) FROM {schema}.auth_login_attempts t")
+                    )
+                    == previous
+                )
+                assert (
+                    await session.scalar(
+                        text("SELECT to_regclass(:table)"),
+                        {"table": f"{schema}.agent_user_profiles"},
+                    )
+                    is None
+                )
+            await apply(database, schema, config, "upgrade", "head")
+            assert (await status(database, schema)).is_current
+
+    run(exercise())
 
 
 def test_offline_baseline_sql_needs_no_credentials_or_database(monkeypatch):
@@ -128,6 +172,7 @@ def test_empty_database_upgrades_repeats_downgrades_and_reupgrades(migration_set
                     "agent_run_evidence",
                     "agent_run_dispatches",
                     "agent_event_outbox",
+                    "agent_user_profiles",
                     "alembic_version",
                     "auth_login_attempts",
                     "auth_sessions",
@@ -179,7 +224,7 @@ def test_failed_upgrade_rolls_back_ddl_and_preserves_previous_revision(
         """
 from alembic import op
 revision = "0002_failure"
-down_revision = "0008_event_outbox"
+down_revision = "0009_user_profiles"
 branch_labels = depends_on = None
 def upgrade():
     op.execute("CREATE TABLE rollback_probe (id integer)")

@@ -1,5 +1,13 @@
 # Statistics agent architecture
 
+**8 November auth target revision:** the approved
+[Plan 3.8 migration](bearer-authentication-migration.md) replaces the final
+browser-session/token-storage boundary with frontend PKCE, a Bearer resource
+server and nonsecret per-run execution grants. Only the additive display-profile
+foundation (3.8.1) is implemented in the current branch; HTTP and workers still
+use the existing session model. The old authentication target below is superseded,
+not silently switched at runtime. Dataset/history/tool/telemetry scope is unchanged.
+
 Updated: 29 October 2026. **Design confirmed by the user; implementation is partial.**
 This is the shared architecture for plans 5–8. It does not add runtime behavior,
 freeze an HTTP API, or replace the canonical parent-workspace implementation order.

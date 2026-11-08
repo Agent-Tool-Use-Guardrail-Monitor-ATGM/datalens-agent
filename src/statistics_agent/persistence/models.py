@@ -26,6 +26,27 @@ class Base(DeclarativeBase):
     """All future agent models share this metadata, never Keycloak's models."""
 
 
+class UserProfileRecord(Base):
+    """Optional display data; ownership and roles never depend on this projection."""
+
+    __tablename__ = "agent_user_profiles"
+    __table_args__ = (
+        CheckConstraint(
+            "length(btrim(issuer)) > 0 AND length(btrim(subject)) > 0 "
+            "AND (display_name IS NULL OR length(btrim(display_name)) > 0) "
+            "AND (username IS NULL OR length(btrim(username)) > 0) "
+            "AND (email IS NULL OR length(btrim(email)) > 0)",
+            name="ck_profile_nonblank",
+        ),
+    )
+    issuer: Mapped[str] = mapped_column(String(2048), primary_key=True)
+    subject: Mapped[str] = mapped_column(String(255), primary_key=True)
+    display_name: Mapped[str | None] = mapped_column(String(255))
+    username: Mapped[str | None] = mapped_column(String(255))
+    email: Mapped[str | None] = mapped_column(String(320))
+    profile_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class LoginAttempt(Base):
     __tablename__ = "auth_login_attempts"
     __table_args__ = (
