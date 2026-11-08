@@ -1,5 +1,29 @@
 # Plan 3.8.2 — Session-independent JWT verification
 
+## CI correction — collection-time token timestamps
+
+The user's CI report had 1,135 passes and one failure in the new excessive-lifetime
+test. Its `exp` was generated at module import/collection, but the signed token's
+`iat` was generated later during execution. After about six minutes of earlier
+tests, the intended 601-second token could instead have a valid lifetime below
+300 seconds; the verifier correctly accepted it. The future `nbf` parameter had
+the same collection-age dependency. This failure is separate from browser login.
+
+The exact `DID NOT RAISE AuthenticationError` was reproduced in 0.60 seconds by
+aging the collected expiry parameter 360 seconds, without waiting. A boundary
+regression also failed before the fix. The test helper now sets issued-at,
+expiry and optional not-before from one minting-time clock, while parameter tables
+contain relative durations. Temporal cases have descriptive pytest IDs.
+No production verifier, timeout or assertion was weakened to reject valid tokens.
+
+After correction, resource/legacy verifier tests: **75 passed**. Importing the
+test module with its collection clock 360 seconds and 660 seconds behind, then
+restoring execution time, gave **44 passed** in each case. These ephemeral
+diagnostic harnesses wrote no source files and added no sleep/retry to tests.
+Ruff/format/whitespace checks pass. No new dependency or database change. Full
+browser/database gates were not rerun; the prior evidence below remains historical
+and the required remote PR `tests` gate still needs to pass after pushing this fix.
+
 Implemented internally on `fix/bearer-authentication-migration`, 8 November 2026.
 This step supplies verification prerequisites, not the HTTP/worker cutover.
 

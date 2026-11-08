@@ -109,6 +109,13 @@ rejection of credential fields, and preservation of old tables/data on upgrade.
 
 ### 3.8.2: Independent resource-server verifier
 
+CI follow-up: collection-time temporal parameters in the new test could age into
+valid tokens during the full suite. The minting helper now anchors relative time
+claims together; production verification is unchanged. 75 resource/legacy tests
+and two simulated collection-delay runs (44 passed each at 360s/660s) pass, with
+explicit 300/301-second boundary coverage. See the verifier record for the exact
+red/green proof. No next migration step is implemented by this correction.
+
 Complete locally; required remote PR tests/delivery pending. See
 [usage and security boundaries](resource-server-verifier.md). No HTTP/worker
 cutover or new database mutation is included in this step.

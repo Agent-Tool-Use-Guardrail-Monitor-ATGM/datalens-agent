@@ -32,8 +32,13 @@ async def verifier():
         await client.close()
 
 
-def token(source, **changes):
-    return source.token(changes={"azp": "agent-web"} | changes)
+def token(source, *, lifetime=300, not_before_in=None, **changes):
+    # Anchor relative claims together at minting, never at test collection.
+    now = int(datetime.now(UTC).timestamp())
+    claims = {"azp": "agent-web", "iat": now, "exp": now + lifetime}
+    if not_before_in is not None:
+        claims["nbf"] = now + not_before_in
+    return source.token(changes=claims | changes)
 
 
 def test_resource_verifier_needs_no_private_secret_files_or_database(monkeypatch):
@@ -106,9 +111,9 @@ def test_multi_audience_separate_authorized_party_roles_and_bounded_profile_hint
         {"iat": True},
         {"nbf": True},
         {"nbf": "123"},
-        {"nbf": int(datetime.now(UTC).timestamp()) + 600},
+        pytest.param({"not_before_in": 600}, id="future-not-before"),
         {"sub": " "},
-        {"exp": int(datetime.now(UTC).timestamp()) + 601},
+        pytest.param({"lifetime": 601}, id="excessive-lifetime"),
         {"resource_access": {"agent-api": {"roles": "admin"}}},
         {"email_verified": "true"},
         {"sid": ""},
@@ -125,6 +130,24 @@ def test_invalid_signed_tokens_are_rejected(changes):
             with pytest.raises(AuthenticationError) as error:
                 await client.verify_access(token(source, **changes))
             assert error.value.code == AuthFailureCode.LOGIN_REQUIRED
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize(
+    "lifetime,allowed",
+    [pytest.param(300, True, id="maximum-valid"), pytest.param(301, False, id="too-long")],
+)
+def test_lifetime_limit_is_measured_from_token_minting(lifetime, allowed):
+    async def exercise():
+        async with verifier() as (source, client):
+            value = token(source, lifetime=lifetime)
+            if allowed:
+                result = await client.verify_access(value)
+                assert result.expires_at - result.issued_at == lifetime
+            else:
+                with pytest.raises(AuthenticationError):
+                    await client.verify_access(value)
 
     asyncio.run(exercise())
 

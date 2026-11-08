@@ -1,5 +1,16 @@
 # DataLens statistics-agent development
 
+CI timing correction for 3.8.2: the new verifier test created absolute expiry/
+not-before parameters at collection, while token issuance time was generated at
+execution. A six-minute CI delay could turn its intended 601-second token into
+a valid token with less than 300 seconds left. Test tokens now anchor relative
+time claims together at minting. Production JWT validation is unchanged.
+Verifier/legacy gate: **75 passed**; simulated 360-second and 660-second collection
+delays: **44 passed each**, without sleeping. Added 300/301-second boundary cases.
+Ruff/format/whitespace checks pass. Full browser/database gates were not rerun for
+this test-only correction; required GitHub `tests` must pass after the next push.
+This is separate from the older browser-login 503 flake recorded below.
+
 Latest requested step: **3.8.2 independent resource-server JWT verifier**, reusing
 `fix/bearer-authentication-migration` after the user's 3.8.1 merge/pull confirmation.
 [Verifier contract and usage](docs/resource-server-verifier.md). The secret-free
