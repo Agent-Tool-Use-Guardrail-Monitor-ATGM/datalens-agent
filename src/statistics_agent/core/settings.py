@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     app_env: Literal["development", "test", "staging", "production"] = Field(
         default="development", validation_alias="APP_ENV"
     )
-    service_name: Literal["agent-api", "agent-worker"] = Field(
+    service_name: Literal["agent-api", "agent-worker", "agent-publisher"] = Field(
         default="agent-api", validation_alias="SERVICE_NAME"
     )
     service_version: str = Field(

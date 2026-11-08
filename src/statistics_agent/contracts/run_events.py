@@ -91,6 +91,9 @@ class ToolFailed(ToolCompleted):
         "limit_exceeded",
         "interrupted",
         "not_dispatched",
+        "invalid_clarification",
+        "invalid_tool_identity",
+        "mixed_finalization_batch",
     ]
 
 
@@ -104,7 +107,7 @@ class ModelCompleted(RunEventPayload):
 class ModelFailed(RunEventPayload):
     model_call_id: UUID
     attempt_index: Annotated[int, Field(strict=True, ge=1)]
-    latency_ms: Nonnegative
+    latency_ms: Nonnegative | None = None
     category: Literal[
         "authentication",
         "rate_limit",
@@ -113,6 +116,7 @@ class ModelFailed(RunEventPayload):
         "network",
         "provider_error",
         "invalid_response",
+        "interrupted",
     ]
     outcome_unknown: Annotated[bool, Field(strict=True)] = False
 

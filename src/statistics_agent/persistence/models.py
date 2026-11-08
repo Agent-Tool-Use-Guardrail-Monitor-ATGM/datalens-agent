@@ -4,10 +4,12 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Identity,
     Index,
     LargeBinary,
     String,
@@ -309,6 +311,7 @@ class RunAttemptRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reason: Mapped[str | None] = mapped_column(String(64))
+    telemetry_version: Mapped[str | None] = mapped_column(String(32))
 
 
 class RunEvidence(Base):
@@ -344,3 +347,29 @@ class RunDispatch(Base):
     operation_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     attempt_index: Mapped[int] = mapped_column(primary_key=True)
     outcome: Mapped[str] = mapped_column(String(8))
+
+
+class EventOutbox(Base):
+    """Independent retention: deleting chat history must not erase undelivered events."""
+
+    __tablename__ = "agent_event_outbox"
+    __table_args__ = (
+        UniqueConstraint("session_id", "sequence", name="uq_outbox_sequence"),
+        CheckConstraint(
+            "sequence BETWEEN 1 AND 1024 AND octet_length(envelope::text) <= 32768",
+            name="ck_outbox_bounds",
+        ),
+        Index("ix_outbox_pending", "position", postgresql_where=text("published_at IS NULL")),
+        Index(
+            "ix_outbox_published",
+            "published_at",
+            "position",
+            postgresql_where=text("published_at IS NOT NULL"),
+        ),
+    )
+    event_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    position: Mapped[int] = mapped_column(BigInteger, Identity(), unique=True)
+    session_id: Mapped[UUID] = mapped_column(Uuid)
+    sequence: Mapped[int]
+    envelope: Mapped[dict] = mapped_column(JSONB)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

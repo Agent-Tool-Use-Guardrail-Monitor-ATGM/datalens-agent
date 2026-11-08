@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from statistics_agent.agent.composition import create_statistics_session
 from statistics_agent.agent.prompts import PROMPT
 from statistics_agent.agent.provider import ModelAdapter
+from statistics_agent.agent.telemetry import observe_proposal
 from statistics_agent.contracts.agent import AgentContext
 from statistics_agent.contracts.auth import AuthorizedPrincipal
 from statistics_agent.contracts.policy import ToolExecutionScope
@@ -46,9 +47,20 @@ class WorkerAccess:
 class WorkerEvidence:
     def __init__(self, jobs, claim):
         self.jobs, self.claim = jobs, claim
+        self.pending = None
+
+    async def checkpoint(self, context, result):
+        if self.pending is not None:
+            raise ValueError("Worker checkpoint already pending")
+        self.pending = context, result
 
     async def append(self, event):
-        await self.jobs.append(self.claim, event)
+        if self.pending is None:
+            await self.jobs.append(self.claim, event)
+        else:
+            context, result = self.pending
+            await self.jobs.checkpoint(self.claim, context, result, event=event)
+            self.pending = None
 
 
 class AgentWorker:
@@ -103,15 +115,18 @@ class AgentWorker:
             await self.jobs.before_model(claim, request)
 
         async def checkpoint(current, result):
-            await self.jobs.checkpoint(claim, current, result)
+            await sink.checkpoint(current, result)
 
-        sink, sequence = WorkerEvidence(self.jobs, claim), itertools.count(1).__next__
+        sink, sequence = WorkerEvidence(self.jobs, claim), itertools.count(2).__next__
         adapter = ModelAdapter(
             self.model_settings,
             sink,
             sequence,
             transport=self.transport,
             before_dispatch=before_model,
+            observe_proposal=lambda raw, call_id: observe_proposal(
+                raw, call_id, frozenset(item.dataset_id for item in admission.datasets)
+            ),
         )
         session = create_statistics_session(
             scope=ToolExecutionScope(
