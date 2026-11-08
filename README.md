@@ -1,6 +1,32 @@
 # DataLens statistics-agent development
 
-Latest requested step: **3.8.1 minimal user-profile foundation**, on
+Latest requested step: **3.8.2 independent resource-server JWT verifier**, reusing
+`fix/bearer-authentication-migration` after the user's 3.8.1 merge/pull confirmation.
+[Verifier contract and usage](docs/resource-server-verifier.md). The secret-free
+`ResourceAuthSettings` separates `OIDC_AUDIENCE=agent-api` from allowed frontend
+authorized parties (`agent-web` by default). Verification returns immutable
+identity/time/session metadata and bounded display hints, never credentials.
+Hints do not overwrite future event-owned profile data. See
+[.env.resource-auth.example](.env.resource-auth.example) for explicit configuration.
+
+Shared JWT/JWKS logic now supports both this verifier and the current legacy
+OAuth client; cookie HTTP routes and workers have not switched. No database
+migration, new database lock, RabbitMQ consumer, CORS or public frontend client is
+added here. [Concurrency/deadlock recovery planning](docs/database-concurrency-and-recovery.md)
+extends future identity integration with source revisions, consistent lock order
+and bounded transaction-only retries; existing atomic profile upserts/leases and
+row/advisory locks remain. No generic lock/retry framework was introduced.
+
+3.8.2 is complete locally: **132 focused checks**, **1,119 backend tests** and
+**17 final browser tests** passed. Ruff/format/dependency/whitespace checks pass.
+First browser group had 16 passes and one success-login 503; its unchanged
+isolated rerun and final group passed with safe phase/timing diagnostics only.
+The earlier failure remains recorded, with no proven cause or timeout/assertion
+changes; it is an unresolved flake risk, not a claimed fix. Required remote PR
+`tests` and delivery remain pending. No commit/push. Stop before 3.8.3; Bearer HTTP
+cutover is not delivered. Full evidence is in the verifier document.
+
+Previous step: **3.8.1 minimal user-profile foundation**, delivered per user on
 `fix/bearer-authentication-migration` (renamed before push). The approved
 [bearer-authentication migration](docs/bearer-authentication-migration.md) changes
 the target architecture to frontend PKCE and request JWT validation. This first
@@ -18,12 +44,23 @@ unused additive table in place. Test downgrade deletes profile rows only.
 3.8.1 verification: focused gate **55 passed**; full non-browser regression
 **1,077 passed, 17 browser tests deselected**, 514 warnings, 149.66 seconds.
 Ruff/format/dependency/whitespace checks pass. Browser tests were not rerun.
-Required PR `tests` and delivery remain pending. Stop before 3.8.2.
+Those are historical 3.8.1 results; its merge/pull is now accepted from the user.
 
 Step 7.6 delivery is accepted from the user pull confirmation. The existing
 pending-event limit decision remains open; cleanup scheduling is paused while
 the authentication boundary is migrated. No identity/frontend runtime change or
 cloud resource is included in this branch. Parent planning files are outside PR.
+
+Approved follow-up plans: [identity events and connectivity](docs/identity-events-and-connectivity-plan.md).
+RabbitMQ will carry registration/profile/security changes independently of Kafka
+telemetry. Profiles update through ordered events without an agent request;
+minimal separate revocation metadata rejects new requests after event consumption,
+with a 300-second JWT-expiry fallback. Accepted bounded jobs may finish after
+logout/password/account changes, retaining existing lease/data checks. Account
+actions use Keycloak Account Console; profile images are excluded. Exact frontend
+CORS and configurable public HTTPS/AMQPS endpoints are planned, not implemented.
+That prior documentation-only update did not rerun 3.8.1; current 3.8.2 verification
+is recorded separately above and in the verifier document.
 
 Previous step 7.6, originally prepared on `feature/kafka-event-outbox`:
 [Kafka telemetry delivery](docs/kafka-telemetry.md). Kafka is team-owned; this

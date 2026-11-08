@@ -3,10 +3,19 @@
 **8 November auth target revision:** the approved
 [Plan 3.8 migration](bearer-authentication-migration.md) replaces the final
 browser-session/token-storage boundary with frontend PKCE, a Bearer resource
-server and nonsecret per-run execution grants. Only the additive display-profile
-foundation (3.8.1) is implemented in the current branch; HTTP and workers still
+server and nonsecret per-run execution grants. Profile foundation 3.8.1 is
+delivered per user confirmation; [3.8.2](resource-server-verifier.md) now adds the
+independent JWT prerequisite on the reused branch. HTTP and workers still
 use the existing session model. The old authentication target below is superseded,
 not silently switched at runtime. Dataset/history/tool/telemetry scope is unchanged.
+
+The approved [identity-events/connectivity plan](identity-events-and-connectivity-plan.md)
+adds dedicated RabbitMQ registration/profile/revocation delivery, separate minimal
+agent revocation metadata and public HTTPS/AMQPS configuration with exact browser
+CORS. Kafka remains agent telemetry only. Keycloak Account Console owns account
+actions; profile images are excluded. Accepted bounded jobs may finish after
+logout/password/account changes, retaining existing data/lease checks. These
+capabilities are planned only; 3.8.2 changes verification internals, not HTTP routing.
 
 Updated: 29 October 2026. **Design confirmed by the user; implementation is partial.**
 This is the shared architecture for plans 5–8. It does not add runtime behavior,

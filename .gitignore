@@ -27,6 +27,7 @@ coverage.xml
 !.env.example
 !.env.postgres.example
 !.env.auth.example
+!.env.resource-auth.example
 secrets/
 
 # Local logs and operating-system files.

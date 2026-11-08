@@ -9,6 +9,7 @@ from pydantic import Field, SecretStr, ValidationError
 
 from statistics_agent.contracts.common import Contract, ShortReference
 from statistics_agent.core.auth import AuthSettings
+from statistics_agent.core.json_validation import unique_object as unique_object
 from statistics_agent.core.settings import ConfigurationError
 
 
@@ -21,15 +22,6 @@ class AuthSecrets(Contract):
     client_secret: SecretStr = Field(exclude=True, repr=False)
     active_key_id: ShortReference
     keys: tuple[EncryptionKey, ...] = Field(exclude=True, repr=False)
-
-
-def unique_object(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("Duplicate keyring field")
-        result[key] = value
-    return result
 
 
 def load_auth_secrets(settings: AuthSettings) -> AuthSecrets:

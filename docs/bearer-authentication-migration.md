@@ -2,17 +2,27 @@
 
 Approved 8 November 2026. This migration supersedes the earlier target of storing
 browser sessions and OAuth tokens inside the statistics service. Implement one
-numbered step per branch/PR; existing runtime behavior changes only at cutover.
-Step 3.8.1 is the only implementation authorized for the current branch.
+numbered implementation step per PR; existing runtime behavior changes only at
+cutover. User confirmed 3.8.1 was merged/pulled and explicitly asked to reuse
+`fix/bearer-authentication-migration`. Current authorized step is **3.8.2**;
+stop before 3.8.3. Preserve prior planning changes. Later implementation normally
+uses task-named `fix/` branches unless the user explicitly requests reuse.
 
-**3.8.1 status:** complete locally on `fix/bearer-authentication-migration`
+**Historical 3.8.1 verification:** prepared on `fix/bearer-authentication-migration`
 (renamed before push), required
 PR tests/delivery pending. Focused profile/migration/auth-storage/outbox gate:
 55 passed. Full non-browser regression: **1,077 passed, 17 browser tests
 deselected**, 514 warnings, 149.66 seconds. Ruff/format/dependency/whitespace
 checks passed. Disposable PostgreSQL only; no real identity/frontend/provider or
 cloud deployment was changed. Browser tests were not rerun. No commit or push.
-Stop before 3.8.2.
+Its delivery is now accepted from user merge/pull confirmation.
+
+**Plan-only follow-up:** the user confirmed RabbitMQ identity integration,
+event-driven revocation with 300-second expiry fallback, Account Console actions,
+accepted-job completion, no profile images and hosted/exact-CORS configuration.
+The numbered target now runs through 3.8.9. Local links/code fences in seven key
+plan files and service Git whitespace were checked. Runtime code and the verified
+3.8.1 scope were not expanded; no runtime tests were rerun for documentation.
 
 ## Confirmed target
 
@@ -24,25 +34,50 @@ Stop before 3.8.2.
 - The agent is a resource server. It verifies signature, issuer, audience,
   authorized party, expiry and required roles on every protected request. It does
   not store access/refresh tokens, OAuth login attempts or browser sessions in the
-  final architecture. No gateway, broker authentication or per-request identity
-  database access is introduced.
+  final architecture. No gateway or per-request identity database access is
+  introduced. RabbitMQ distributes identity changes, not request credentials.
 - API audience and role namespace remain `agent-api`; the future browser client
   is `agent-web`. Allowed authorized parties must be validated separately from
   the API audience. Do not turn the existing confidential client into a public
   client or relax audience checks to make frontend tokens work.
 - Preserve current RS256, verified-email, admin-includes-user, ownership and
-  bounded JWKS-trust rules. A valid token does not guarantee immediate revocation
-  detection; new requests may remain authorized until expiry (currently 300s).
+  bounded JWKS-trust rules. Apply consumed RabbitMQ revocation metadata to new
+  requests/admissions. While delivery is delayed, previously issued tokens can
+  remain accepted until expiry (maximum 300s, zero expiry leeway). Event-driven
+  rejection is fast when healthy, not a guarantee of immediate revocation.
 - The agent stores a display projection only: exact issuer/subject, nullable
   display name, username, email and profile-update timestamp. Email/name are not
   identity keys, login status or authorization authority. Missing display claims
-  remain absent, not invented. Do not expose a public user directory.
+  remain absent, not invented. Registration/admin-created-account and subsequent
+  profile changes must update this projection through identity events, even if
+  the user never calls the agent. No profile pictures, avatar fields/uploads,
+  image URLs or avatar storage. Do not expose a public user directory.
+- Agent-owned integration tables may contain deduplication/version/tombstone
+  metadata and minimal revocation cutoffs/session identifiers. These are separate
+  from display profiles and contain no passwords, tokens or login sessions.
+  API replicas use shared agent storage for revocation decisions; a consumer
+  updating only its own process cache is insufficient for other replicas.
 - Accepted background work receives a server-created per-run authorization grant:
   actor, permitted scope, admission time, queue/start deadline and bounded execution
   deadline. No token is retained. A job can wait at most 10 minutes, then execute
-  within the pinned profile limit (120s default, maximum 600s). Logout or token
-  expiry does not revoke an already admitted grant. Fresh requests still require
-  valid tokens. Grants cannot authorize unrelated runs or broaden dataset scope.
+  within the pinned profile limit (120s default, maximum 600s). Logout, token
+  expiry, password change and account disable/delete do not revoke an already
+  admitted grant. No identity/profile/revocation lookup is added at each model or
+  tool step. Existing lease, scope, resource and terminal-write checks remain.
+  Actually deleted datasets/runs must fail safely, never be recreated by a worker.
+  Fresh requests still require valid, nonrevoked tokens. Grants cannot authorize
+  unrelated runs or broaden dataset scope. Account deletion is not an implicit
+  instruction to erase every dataset/history row; erasure needs its own policy.
+- RabbitMQ is dedicated to identity integration; Kafka remains agent telemetry
+  only. The identity producer and agent consumer require separate contracts,
+  credentials and durability logic, not the seven agent-event envelope.
+- Account/password/username/session management uses Keycloak Account Console,
+  reached through frontend buttons. No custom password API or credential form.
+  Enable only intended username editing and prove the password-change/logout-all
+  behavior in the pinned Keycloak version; it is not assumed from defaults.
+- Hosted connections use explicit HTTPS service URLs and AMQPS broker settings.
+  Browser CORS has exact frontend origins; it is not service authentication.
+  See the [identity events/connectivity plan](identity-events-and-connectivity-plan.md).
 - PostgreSQL jobs/outbox and Kafka telemetry remain unchanged in responsibility.
   Auth cleanup scheduling is paused pending this migration, not moved into Keycloak.
 
@@ -61,8 +96,11 @@ email as proof of ownership or a delivery address verified independently here.
 The internal upsert accepts only claims supplied by trusted application code; a
 Pydantic instance alone does not prove token verification. Do not wire it to
 unverified request bodies. Missing fields replace old display fields with NULL.
-Profile data reflects the most recently processed accepted claim snapshot; an
-older still-valid token can contain stale names/email. It never governs access.
+The current 3.8.1 store has no source revision: it reflects the last processed
+snapshot, so an older JWT could overwrite a newer name if wired indiscriminately.
+This is a known limitation of this unused foundation, not the planned sync policy.
+Step 3.8.5 must add ordered event projection before wiring runtime synchronization;
+do not repeatedly persist JWT display claims over event-owned profile values.
 
 This step adds no HTTP route and no automatic claim-to-profile synchronization.
 The existing cookie/session authentication and worker continue unchanged until
@@ -70,6 +108,16 @@ later steps. Verify isolation, nullable fields, idempotent/concurrent updates,
 rejection of credential fields, and preservation of old tables/data on upgrade.
 
 ### 3.8.2: Independent resource-server verifier
+
+Complete locally; required remote PR tests/delivery pending. See
+[usage and security boundaries](resource-server-verifier.md). No HTTP/worker
+cutover or new database mutation is included in this step.
+
+Evidence: 132 focused checks; final non-browser 1,119 passed and browser 17 passed
+in sequential groups. The first browser group had one login 503 (16 passed);
+isolated/final repeats passed with safe diagnostics, without test/timeout changes.
+The unreproduced failure remains a documented flake risk. Ruff/format/dependency/
+whitespace and plan-link checks pass. No commit/push. Stop before 3.8.3.
 
 Separate JWT/JWKS validation from confidential-client token exchange and encrypted
 session storage. Resource-server configuration must require no OAuth client secret
@@ -81,20 +129,51 @@ that silently grants cookie-era authorization to a bearer request.
 
 ### 3.8.3: Public frontend client and frontend handoff
 
-In a separate `datalens-identity` feature branch, configure public `agent-web` with
+In a separate `datalens-identity` `fix/` branch, configure public `agent-web` with
 exact callback/logout/origin allowlists, mandatory PKCE S256, no client secret,
 implicit flow or password grant. Issue `agent-api` audience/client-role claims and
 the approved display claims; use required built-in/explicit scopes and mappers.
 Preserve the confidential client's current behavior during the compatibility window.
 Never allow wildcard production redirects or persist browser tokens in localStorage.
 
+Configure Account Console access for password/username changes and session
+management. Keep administrator-only APIs/privileges out of the frontend. Verify
+ordinary logout, logout-all, password-change invalidation, username edits and
+display claims against the actual pinned runtime. No profile-image capability.
+
 Update teammate plans and concrete request examples: memory-only tokens, refresh
 coordination, refresh before expiry, bounded retry after 401, login on failed refresh,
-403 without refresh loops, logout, CORS and safe error rendering. Frontend source
-must render profile values as untrusted text, never raw HTML. Frontend source
+403 without refresh loops, logout, CORS and safe error rendering. Render profile
+values as untrusted text, never raw HTML. Frontend source
 is not in this workspace; do not claim implementation or browser cutover there.
 
-### 3.8.4: Accepted-job grants independent of browser sessions
+### 3.8.4: Identity events and RabbitMQ delivery
+
+Implement the identity-owned transaction-aware listener/outbox/publisher, dedicated
+RabbitMQ exchange/queues and versioned registration/profile/security contracts in
+the [integration plan](identity-events-and-connectivity-plan.md). Cover both
+administrator account creation and supported self-service events. A RabbitMQ
+installation by itself does not produce Keycloak events. Identity changes must
+commit with durable delivery intent; retries cannot lose changes or block login
+on a broker network call. No direct deletion of Keycloak-managed tables.
+
+### 3.8.5: Agent profile consumer and local revocation metadata
+
+Follow the [database concurrency/recovery requirements](database-concurrency-and-recovery.md):
+conditional source-version writes, transactional inbox/state effects, consistent
+lock ordering and bounded retries for whole idempotent database transactions.
+Never retry model/tool operations through a generic transaction wrapper.
+
+Consume identity events, updating profiles/version state and inbox receipts in one
+agent database transaction; acknowledge only after commit. Add ordered profile
+projection, delete tombstones and minimal shared revocation metadata. Registration
+must create the profile without an agent request. Handle events delayed before
+registration, duplicates, reversals, broker outages and existing-user backfill.
+An old token/profile event must not undo a newer username/deletion/security event.
+Do not silently drop independent session revocations because another newer event
+was already seen. No token/password/role authority is stored in display profiles.
+
+### 3.8.6: Accepted-job grants independent of browser sessions
 
 Add versioned, nonsecret admission grants and expiry fields. Admission must atomically
 validate request actor/permissions, pin resource scope and write the grant with the
@@ -108,22 +187,29 @@ During rollout, drain legacy queued/running jobs using old workers before switch
 admission/workers. Do not fabricate grants from session references or stored user
 profiles. Document failure/recovery and idempotency if draining cannot complete.
 
-### 3.8.5: HTTP cutover and profile synchronization
+### 3.8.7: HTTP cutover, CORS and frontend integration
 
 Require a single well-formed Bearer header on protected routes; cookie credentials
 alone must not authorize. Enforce verified roles and existing resource ownership.
-After successful authentication/authorization, project only allowed profile claims.
-Define the own-profile HTTP contract for the frontend without exposing other users.
+Check consumed revocation metadata after JWT verification, before admitting new
+requests/work. Define the own-profile HTTP contract without exposing other users.
+Read event-owned display profiles rather than overwriting them from stale JWTs.
+Valid users may reach the agent before profile delivery; expose a clear profile-
+synchronizing state without using profile existence as authentication authority.
 Replace cookie/CSRF browser API contracts and security schemes with bearer contracts;
 configure exact trusted CORS origins without cookie credentials. No authorization
-decision may use a profile table or a caller-provided user/role header.
+decision may use display fields or a caller-provided user/role header. Use exact
+configured frontend origins, explicit methods/headers and `allow_credentials=False`.
+Allow unauthenticated browser preflight, never unauthenticated business requests.
+Server-to-server access uses TLS, scoped credentials and ingress/firewall controls;
+an Origin header cannot prove which service sent a request.
 
 Switch together with frontend and grant-aware workers. Test fresh login, refresh,
 expiry, logout semantics, audience/authorized-party separation, user isolation,
 dependency outages, concurrent jobs and missing/stale profile data. Publish an
 explicit compatibility/cutover runbook and rollback bounds.
 
-### 3.8.6: Verify and retire legacy session/token storage
+### 3.8.8: Verify and retire legacy session/token storage
 
 Only after cutover proof and a separately requested contraction step, remove old
 login/callback/session/logout handlers, token exchange/refresh/encryption plumbing,
@@ -136,6 +222,16 @@ that old/new clients cannot be rolled back independently after public-client cut
 After deleting session data, old cookie sessions cannot be restored without a backup
 and users must log in again. Keep the outbox cleanup command; Keycloak handles its
 own session lifecycle. Service-specific scheduling remains deployment work.
+
+### 3.8.9: Hosted connectivity and deployment acceptance
+
+Implement reviewed per-environment HTTPS origins/issuer/callback/logout URLs and
+AMQPS endpoints/secrets, without fixed Docker hostnames in hosted configuration.
+Keep local/test profiles separate. Plan 10 owns actual Azure/container/broker
+provisioning and persistent storage. Verify the real public-address topology,
+certificate/hostname checks, exact CORS, restricted broker/management access,
+restarts/backfill and outage recovery before claiming hosted delivery. This step
+does not imply a deployment or extra cloud cost has already been approved.
 
 ## Verification and delivery
 
