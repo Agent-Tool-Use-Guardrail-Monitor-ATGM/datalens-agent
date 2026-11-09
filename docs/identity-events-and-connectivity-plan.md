@@ -1,5 +1,14 @@
 # Plan 3.8.4–3.8.9: Identity events and hosted connectivity
 
+**3.8.3 prerequisite, 9 November 2026:** pinned Keycloak 26.8.1 native password
+sign-out checkbox defaults unchecked. Step 3.8.4 must enforce logout of other
+identity sessions regardless of that choice, in addition to durable revocation
+publication; RabbitMQ alone cannot invalidate still-active refresh tokens.
+Consume canonical `UPDATE_CREDENTIAL` password detail once, avoiding duplicate
+publication from deprecated password events. Test checked and unchecked console
+flows and administrative resets. The separate identity repository's
+`docs/frontend_pkce_handoff.md` records pinned primary sources and opt-in evidence.
+
 Approved design, 8 November 2026. Planning on the reused
 `fix/bearer-authentication-migration` branch. Profile foundation 3.8.1 is delivered
 per user confirmation; current 3.8.2 adds only JWT verification prerequisites.

@@ -1,5 +1,14 @@
 # DataLens statistics-agent development
 
+**Current, 9 November 2026:** 3.8.2 delivery is accepted from user confirmation.
+Step 3.8.3 adds public PKCE configuration in the separate `datalens-identity`
+repository, locally verified by 109 passing identity tests in 377.38 seconds.
+Required PR checks/delivery remain pending. This agent branch contains only
+updated migration plans; no agent runtime changes or HTTP cutover. Identity's
+`docs/frontend_pkce_handoff.md` defines setup and native Account Console behavior.
+Password sign-out from other devices is opt-in until mandatory source enforcement
+in 3.8.4. Stop before that step. Historical 3.8.2 evidence follows.
+
 CI timing correction for 3.8.2: the new verifier test created absolute expiry/
 not-before parameters at collection, while token issuance time was generated at
 execution. A six-minute CI delay could turn its intended 601-second token into
