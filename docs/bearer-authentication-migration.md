@@ -1,5 +1,18 @@
 # Plan 3.8: Bearer authentication and minimal user profiles
 
+**Current, 9 November 2026:** user confirms 3.8.2 delivery. Additive 3.8.3 public
+client tooling is prepared in the separate identity repository on
+`fix/bearer-authentication-migration`; 109 identity tests passed in 377.38 seconds.
+Required PR tests/delivery remain pending. No agent runtime
+change is included. See identity `docs/frontend_pkce_handoff.md` in that repository
+for exact callbacks, administrator setup and the native password sign-out limitation.
+The older current-step statements below are historical. Stop before 3.8.4.
+
+3.8.4 must enforce password-change logout of other identity sessions even when
+the native checkbox is unchecked, then durably publish its revocation event.
+Use password `UPDATE_CREDENTIAL` semantics without double-publishing deprecated
+password events. A RabbitMQ event alone cannot invalidate a live refresh session.
+
 Approved 8 November 2026. This migration supersedes the earlier target of storing
 browser sessions and OAuth tokens inside the statistics service. Implement one
 numbered implementation step per PR; existing runtime behavior changes only at
