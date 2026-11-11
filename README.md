@@ -1,6 +1,20 @@
 # DataLens statistics-agent development
 
-**11 November 2026 - 3.8.5.2 RabbitMQ identity consumer**
+**11 November 2026 - 3.8.5.3a Local bearer revocation**
+
+`BearerAccess` checks the signed JWT and session ID, then reads revocation
+state from agent PostgreSQL. A revoked token requires a new login. A database
+failure or timeout returns `identity_unavailable`. The HTTP routes switch to
+this check in 3.8.7.
+
+Verified with 51 JWT and projection checks and 3 RabbitMQ consumer checks.
+The non-browser run passed 1,130 tests. One existing worker-heartbeat test
+timed out and passed on an isolated retry. Browser checks remain for PR CI.
+Next is **3.8.5.3b**, identity-owned existing-user backfill and replay
+verification. Retain agent receipts, tombstones and revocation metadata
+until a safe replay window and pruning policy are verified.
+
+**Previous milestone: 3.8.5.2 RabbitMQ identity consumer.** [PR #42](https://github.com/Agent-Tool-Use-Guardrail-Monitor-ATGM/datalens-agent/pull/42) merged at `2bdce96`.
 
 Implemented on `feat/identity-rabbitmq-consumer`. The consumer validates
 message metadata and acknowledges new deliveries and identical replays after
@@ -9,11 +23,8 @@ database failures requeue after a delay, and broker disconnects trigger bounded
 reconnect backoff. The process logs delivery lag and backlog.
 
 Eight focused checks passed, including real RabbitMQ-to-PostgreSQL delivery.
-The non-browser suite passed **1,129 tests**. Seventeen browser tests
-remain for the required PR gate.
-See [consumer setup](docs/identity-events-and-connectivity-plan.md#rabbitmq-consumer). This branch is based on the
-passing head of projection PR #41. Next after verified delivery is **3.8.5.3
-backfill and revocation integration**.
+The non-browser suite passed **1,129 tests** for that step.
+See [consumer setup](docs/identity-events-and-connectivity-plan.md#rabbitmq-consumer).
 
 **Previous milestone: 3.8.5.1 durable identity projection.** [Projection PR #41](https://github.com/Agent-Tool-Use-Guardrail-Monitor-ATGM/datalens-agent/pull/41) passed the required CI check at `eb6a83c`.
 
