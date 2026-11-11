@@ -153,6 +153,37 @@ the new code and upgrade profile writers before enabling message delivery.
 Keep the expanded schema on live rollback to retain receipts and tombstones.
 Disposable downgrades refuse to truncate existing display data.
 
+### RabbitMQ consumer
+
+Run the identity receiver as a separate process after applying the agent
+migration and deploying the messaging topology:
+
+```powershell
+python -m statistics_agent.identity_consumer --env-file .env
+```
+
+Configure the agent `DATABASE_URL`, exact `OIDC_ISSUER`, and secret
+`IDENTITY_CONSUMER_AMQP_URL`. The URL uses the scoped
+`agent-identity-consumer` credentials and the `/identity` vhost. Use AMQPS
+for hosted environments. Set `IDENTITY_CONSUMER_CA_FILE` when a private CA is
+required. Plaintext is limited to loopback or the local Compose broker name
+in development and tests.
+
+The process checks the schema before consuming `agent.identity.v1`. It
+prefetches one delivery and compares the AMQP message ID and routing key with
+the validated envelope. New events and identical replays are acknowledged
+after the database transaction completes. Invalid deliveries go to the
+restricted dead-letter queue. Transient database errors return the uncommitted
+delivery after a five-second pause. Unexpected database errors stop the
+process with the delivery unacknowledged. RabbitMQ disconnects retry with
+bounded backoff. Logs report queue backlog, stale events, connection trouble
+and dead-letter rejection without including event data or secrets.
+
+RabbitMQ operators monitor `agent.identity.dead.v1` separately. The consumer
+credentials cannot read it. The current broker is RabbitMQ 4.4, where an
+explicit negative acknowledgement with requeue does not increment the quorum
+queue's failure counter. [RabbitMQ quorum queue behavior](https://www.rabbitmq.com/docs/quorum-queues#message-return-behavior-rabbitmq-43).
+
 Follow [database concurrency/recovery](database-concurrency-and-recovery.md) for
 the exact lock-order, source-version and whole-transaction retry requirements.
 Do not confuse atomic profile upsert with stale-event protection, or a process

@@ -1,6 +1,21 @@
 # DataLens statistics-agent development
 
-**11 November 2026 - 3.8.5.1 durable identity projection**
+**11 November 2026 - 3.8.5.2 RabbitMQ identity consumer**
+
+Implemented on `feat/identity-rabbitmq-consumer`. The consumer validates
+message metadata and acknowledges new deliveries and identical replays after
+PostgreSQL commits. Invalid messages go to the dead-letter queue. Transient
+database failures requeue after a delay, and broker disconnects trigger bounded
+reconnect backoff. The process logs delivery lag and backlog.
+
+Eight focused checks passed, including real RabbitMQ-to-PostgreSQL delivery.
+The non-browser suite passed **1,129 tests**. Seventeen browser tests
+remain for the required PR gate.
+See [consumer setup](docs/identity-events-and-connectivity-plan.md#rabbitmq-consumer). This branch is based on the
+passing head of projection PR #41. Next after verified delivery is **3.8.5.3
+backfill and revocation integration**.
+
+**Previous milestone: 3.8.5.1 durable identity projection.** [Projection PR #41](https://github.com/Agent-Tool-Use-Guardrail-Monitor-ATGM/datalens-agent/pull/41) passed the required CI check at `eb6a83c`.
 
 Migration `0010_identity_projection` adds event receipts, per-owner
 profile and account state, and indexed session revocations. Profile updates
@@ -12,10 +27,6 @@ Focused verification passed 39 checks, including PostgreSQL concurrency,
 rollback, serialization retry, migration preservation and schema parity.
 The non-browser suite passed **1,126 tests**. Seventeen browser tests
 remain for the required Linux PR gate.
-
-Next after verified delivery is **3.8.5.2 RabbitMQ consumption**. The
-projection is ready for a receiver. Backfill and access integration are
-3.8.5.3.
 
 [Identity projection and rollout](docs/identity-events-and-connectivity-plan.md#durable-projection).
 

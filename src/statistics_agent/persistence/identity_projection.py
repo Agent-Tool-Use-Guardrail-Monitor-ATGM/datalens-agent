@@ -22,9 +22,11 @@ class IdentityProjection:
         self.database = database
         self.expected_issuer = expected_issuer
 
-    async def apply(self, body: bytes) -> bool:
+    async def apply(self, body: bytes, *, delivery: tuple[str | None, str] | None = None) -> bool:
         """Return true for a new committed receipt and false for a replay."""
         event = decode_identity_event(body, self.expected_issuer)
+        if delivery is not None and delivery != (event["event_id"], event["event_type"]):
+            raise IdentityEventError("RabbitMQ message metadata does not match the event")
         digest = hashlib.sha256(body).digest()
         for attempt in range(3):
             try:
