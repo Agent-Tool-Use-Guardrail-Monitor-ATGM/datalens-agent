@@ -1,4 +1,4 @@
-"""Agent-owned persistence; never Keycloak accounts or authorization snapshots."""
+"""Agent-owned persistence; Keycloak owns account and role authority."""
 
 from datetime import datetime
 from uuid import UUID
@@ -327,7 +327,7 @@ class ConversationMessageRecord(Base):
 
 
 class RunJob(Base):
-    """Pending work and bounded lease; credentials remain in encrypted auth storage."""
+    """Pending work, admission grant and bounded lease."""
 
     __tablename__ = "agent_run_jobs"
     run_id: Mapped[UUID] = mapped_column(
@@ -335,9 +335,22 @@ class RunJob(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     auth_session_ref: Mapped[UUID | None] = mapped_column(Uuid)
+    admission_grant: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    queue_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     claim_id: Mapped[UUID | None] = mapped_column(Uuid)
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (
+        CheckConstraint(
+            """
+            (admission_grant IS NULL AND queue_expires_at IS NULL)
+            OR (
+                admission_grant IS NOT NULL AND jsonb_typeof(admission_grant) = 'object'
+                AND queue_expires_at IS NOT NULL
+                AND queue_expires_at = created_at + INTERVAL '10 minutes'
+            )
+            """,
+            name="ck_job_admission_grant",
+        ),
         CheckConstraint(
             "(claim_id IS NULL) = (lease_expires_at IS NULL)",
             name="ck_job_lease",

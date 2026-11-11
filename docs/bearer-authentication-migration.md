@@ -199,13 +199,28 @@ See the [revocation check and backfill sequence](identity-events-and-connectivit
 
 ### 3.8.6: Accepted-job grants independent of browser sessions
 
-Add versioned, nonsecret admission grants and expiry fields. Admission must atomically
-validate request actor/permissions, pin resource scope and write the grant with the
-job. Workers authorize only that job/attempt/scope/deadline, preserving lease,
-owner and checkpoint/terminal fences and interruption/partial-result semantics.
-Use database time for persisted admission/start bounds. Queue timeout must terminalize
-without executing tools or leaving the conversation busy. A worker restart never
-extends an admitted deadline or silently replays interrupted operations.
+**3.8.6a — Admission and storage.** Migration `0011_run_admission_grants`
+adds a versioned, nonsecret actor snapshot and `queue_expires_at`. The job's
+run ID links the grant to its pinned datasets and execution configuration.
+Admission writes the run, user message, job and grant in one transaction.
+The queue deadline is ten minutes from database admission time. Idempotent
+retries return the existing run without renewing the deadline or replacing
+the original actor permissions.
+
+Existing jobs retain their session reference and have empty grant fields.
+This step keeps the legacy worker behavior. Startup requires the binary's
+matching schema revision. If rolling back, use the current worker to drain
+granted jobs before downgrading. The migration refuses to drop live grants.
+Focused verification passed 69 migration, admission and legacy worker checks.
+
+**3.8.6b — Worker enforcement.** Persist the execution deadline at claim
+time, authorize only the granted run and its pinned scope, and terminalize
+expired queued jobs before dispatch.
+
+Preserve lease, ownership and checkpoint/terminal fences, including partial
+results. Use database time for execution bounds. Queue expiry must release
+the conversation without dispatching work. Worker restarts must honor the
+original execution deadline and preserve the interrupted operation outcome.
 
 During rollout, drain legacy queued/running jobs using old workers before switching
 admission/workers. Do not fabricate grants from session references or stored user

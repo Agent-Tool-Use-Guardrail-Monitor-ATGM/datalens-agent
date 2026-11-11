@@ -3,14 +3,15 @@
 import hashlib
 import json
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from typing import Literal
 from uuid import UUID, uuid4
 
 from pydantic import model_validator
 from sqlalchemy import delete, func, select
 
 from statistics_agent.contracts.agent import AgentVersions, PromptDefinition
-from statistics_agent.contracts.auth import AuthorizedPrincipal
+from statistics_agent.contracts.auth import AuthorizedPrincipal, VerifiedIdentity
 from statistics_agent.contracts.common import Contract
 from statistics_agent.contracts.conversations import (
     Conversation,
@@ -56,6 +57,13 @@ class IdempotencyConflictError(RuntimeError):
 class RunInputUnavailableError(LookupError):
     def __init__(self):
         super().__init__("Selected resource unavailable")
+
+
+class RunAdmissionGrant(Contract):
+    """Actor accepted for this job; the referenced run pins its resource scope."""
+
+    schema_version: Literal[1]
+    actor: VerifiedIdentity
 
 
 class AdmissionConfiguration(Contract):
@@ -239,11 +247,12 @@ class ConversationStore:
 
     async def admit(
         self,
-        principal,
+        principal: AuthorizedPrincipal,
         conversation_id,
         submission: RunSubmission,
         configuration: AdmissionConfiguration,
     ) -> StoredAdmission:
+        principal = AuthorizedPrincipal.model_validate(principal, strict=True)
         submission = RunSubmission.model_validate(submission, strict=True)
         configuration = AdmissionConfiguration.model_validate(configuration, strict=True)
         fingerprint = hashlib.sha256(
@@ -358,6 +367,13 @@ class ConversationStore:
                     run_id=run_id,
                     created_at=now,
                     auth_session_ref=principal.auth_session_ref,
+                    admission_grant=RunAdmissionGrant(
+                        schema_version=1,
+                        actor=VerifiedIdentity.model_validate(
+                            principal.model_dump(exclude={"auth_session_ref"})
+                        ),
+                    ).model_dump(mode="json"),
+                    queue_expires_at=now + timedelta(minutes=10),
                 )
             )
             conversation.next_sequence += 1

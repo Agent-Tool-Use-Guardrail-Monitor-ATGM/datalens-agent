@@ -1,5 +1,13 @@
 # DataLens statistics-agent development
 
+**12 November 2026 - 3.8.6a Atomic run admission grants**
+
+Migration `0011_run_admission_grants` adds a versioned actor snapshot and a
+ten-minute queue deadline to newly admitted jobs. Admission writes both
+atomically with the run. Focused migration, admission and worker checks passed
+(69 tests). Worker enforcement follows in 3.8.6b.
+[Grant storage and rollback](docs/bearer-authentication-migration.md#386-accepted-job-grants-independent-of-browser-sessions).
+
 **11 November 2026 - 3.8.5.3a Local bearer revocation**
 
 `BearerAccess` checks the signed JWT and session ID, then reads revocation

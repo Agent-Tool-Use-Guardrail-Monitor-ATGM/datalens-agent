@@ -8,7 +8,7 @@ from uuid import uuid4, uuid5
 
 import httpx
 import pytest
-from sqlalchemy import event, select, text, update
+from sqlalchemy import delete, event, select, text, update
 
 from statistics_agent.agent.composition import create_statistics_session
 from statistics_agent.agent.prompts import PROMPT
@@ -457,7 +457,7 @@ def test_migration_retains_v1_data_and_old_profile_snapshot(migration_settings):
                 RunSubmission(idempotency_key=uuid4(), question="Old run"),
                 old_config,
             )
-            # Legacy writer fixture, before v2 completions existed.
+            # Simulate a completed legacy run without a pending job or v2 completion.
             async with db.session() as session:
                 await session.execute(
                     update(RunRecord)
@@ -468,6 +468,7 @@ def test_migration_retains_v1_data_and_old_profile_snapshot(migration_settings):
                         finished_at=datetime.now(UTC),
                     )
                 )
+                await session.execute(delete(RunJob).where(RunJob.run_id == first.run.run_id))
                 schema = await session.scalar(text("SELECT current_schema()"))
                 await session.commit()
             old = await store.get_run(actor, first.run.run_id)
