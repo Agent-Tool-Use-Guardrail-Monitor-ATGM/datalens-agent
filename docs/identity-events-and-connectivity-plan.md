@@ -26,7 +26,13 @@ Kafka `agent.events.v1` remains agent lifecycle telemetry; identity messages mus
 not use its seven-event envelope or topic.
 
 Planned logical process names are `identity-publisher` and
-`agent-identity-consumer`; a self-hosted broker is `identity-rabbitmq`. The agent
+`agent-identity-consumer`; the broker service is `rabbitmq`, owned by the separate
+`datalens-messaging` infrastructure repository. That repository owns broker storage,
+topology, permissions and deployment; identity owns its source/outbox/publisher
+and schemas, while the agent owns its consumer/projection. The earlier
+`identity-rabbitmq` planning name is superseded. Split 3.8.4.4 into broker foundation
+(3.8.4.4.1, messaging) and publisher (3.8.4.4.2, identity); 3.8.4.5 coordinates
+transport acceptance. This boundary revision does not provision a broker. The agent
 consumer shares the agent repository/image/database, like its API/worker/Kafka
 publisher, not a new account service. These names are planning contracts, not
 already accepted runtime `SERVICE_NAME` values or provisioned containers.
@@ -111,15 +117,81 @@ permissions, logs, retention and operator access; it is not an authorization key
 
 ## 3.8.5 — Agent projection, revocation and recovery
 
+1. **3.8.5.1 Durable projection:** validate the wire contract, record receipts
+   and apply ordered profile and revocation updates in PostgreSQL.
+2. **3.8.5.2 RabbitMQ consumer:** deliver messages to the projection and
+   acknowledge after commit. Add retry, quarantine and operational signals.
+3. **3.8.5.3 Backfill and revocation integration:** reconcile existing identities
+   from supported source snapshots and connect the local revocation read to
+   verified access. Complete retention and replay acceptance before cutover.
+
+### Durable projection
+
+Focused verification passed 39 checks, including PostgreSQL concurrency,
+rollback, serialization retry, migration preservation and schema parity.
+The non-browser suite passed **1,126 tests**. Seventeen browser tests
+remain for the required Linux PR gate.
+
+Migration `0010_identity_projection` preserves existing profiles and adds
+an inbox keyed by event ID, per-owner revision and account state, and indexed
+session revocations. The bundled wire schema matches the identity schema at
+`e1f3fc8`. Receipts store a SHA-256 digest without retaining message bodies.
+A repeated ID with changed bytes is rejected. Every new delivery reserves its
+receipt, locks the exact issuer/subject row, then updates profile or session
+state in the same transaction. Claim-based display writes use that same owner
+lock and defer to source-owned profiles.
+
+Account deletion permanently suppresses the subject's display data. Disable
+and enable events order by status revision. Cutoffs only increase, and older
+session revocations still apply to their individual session IDs. The local
+revocation read is available for a verified access token.
+
+The migration widens stored display name and username to the source limit of
+256 characters. Blank or nonprintable display fields project as NULL. Legacy
+claims retain their existing input limits. Apply the migration before running
+the new code and upgrade profile writers before enabling message delivery.
+Keep the expanded schema on live rollback to retain receipts and tombstones.
+Disposable downgrades refuse to truncate existing display data.
+
+### RabbitMQ consumer
+
+Run the identity receiver as a separate process after applying the agent
+migration and deploying the messaging topology:
+
+```powershell
+python -m statistics_agent.identity_consumer --env-file .env
+```
+
+Configure the agent `DATABASE_URL`, exact `OIDC_ISSUER`, and secret
+`IDENTITY_CONSUMER_AMQP_URL`. The URL uses the scoped
+`agent-identity-consumer` credentials and the `/identity` vhost. Use AMQPS
+for hosted environments. Set `IDENTITY_CONSUMER_CA_FILE` when a private CA is
+required. Plaintext is limited to loopback or the local Compose broker name
+in development and tests.
+
+The process checks the schema before consuming `agent.identity.v1`. It
+prefetches one delivery and compares the AMQP message ID and routing key with
+the validated envelope. New events and identical replays are acknowledged
+after the database transaction completes. Invalid deliveries go to the
+restricted dead-letter queue. Transient database errors return the uncommitted
+delivery after a five-second pause. Unexpected database errors stop the
+process with the delivery unacknowledged. RabbitMQ disconnects retry with
+bounded backoff. Logs report queue backlog, stale events, connection trouble
+and dead-letter rejection without including event data or secrets.
+
+RabbitMQ operators monitor `agent.identity.dead.v1` separately. The consumer
+credentials cannot read it. The current broker is RabbitMQ 4.4, where an
+explicit negative acknowledgement with requeue does not increment the quorum
+queue's failure counter. [RabbitMQ quorum queue behavior](https://www.rabbitmq.com/docs/quorum-queues#message-return-behavior-rabbitmq-43).
+
 Follow [database concurrency/recovery](database-concurrency-and-recovery.md) for
 the exact lock-order, source-version and whole-transaction retry requirements.
 Do not confuse atomic profile upsert with stale-event protection, or a process
 mutex with cross-container database coordination.
 
 Add explicit source-version/inbox/tombstone metadata through new migrations.
-Migration 0009 remains the original additive display table; the current store
-does not yet implement ordered event projection. Token claims must not overwrite
-newer event-owned profile data. Never use username/email to merge user identities.
+Migration 0009 remains the original additive display table. Token claims must
+not overwrite newer event-owned profile data. Never use username/email to merge user identities.
 Owner identity stays the exact `(issuer, subject)` pair.
 
 Apply a delivery's profile/security effects and dedup receipt in one transaction;

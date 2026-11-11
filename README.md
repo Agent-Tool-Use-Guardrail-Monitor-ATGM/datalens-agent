@@ -1,5 +1,41 @@
 # DataLens statistics-agent development
 
+**11 November 2026 - 3.8.5.2 RabbitMQ identity consumer**
+
+Implemented on `feat/identity-rabbitmq-consumer`. The consumer validates
+message metadata and acknowledges new deliveries and identical replays after
+PostgreSQL commits. Invalid messages go to the dead-letter queue. Transient
+database failures requeue after a delay, and broker disconnects trigger bounded
+reconnect backoff. The process logs delivery lag and backlog.
+
+Eight focused checks passed, including real RabbitMQ-to-PostgreSQL delivery.
+The non-browser suite passed **1,129 tests**. Seventeen browser tests
+remain for the required PR gate.
+See [consumer setup](docs/identity-events-and-connectivity-plan.md#rabbitmq-consumer). This branch is based on the
+passing head of projection PR #41. Next after verified delivery is **3.8.5.3
+backfill and revocation integration**.
+
+**Previous milestone: 3.8.5.1 durable identity projection.** [Projection PR #41](https://github.com/Agent-Tool-Use-Guardrail-Monitor-ATGM/datalens-agent/pull/41) passed the required CI check at `eb6a83c`.
+
+Migration `0010_identity_projection` adds event receipts, per-owner
+profile and account state, and indexed session revocations. Profile updates
+apply in source revision order. Token cutoffs only increase, and deletion
+prevents replay from restoring display data. The receipt and effect commit
+together. The local revocation read is available for a verified access token.
+
+Focused verification passed 39 checks, including PostgreSQL concurrency,
+rollback, serialization retry, migration preservation and schema parity.
+The non-browser suite passed **1,126 tests**. Seventeen browser tests
+remain for the required Linux PR gate.
+
+[Identity projection and rollout](docs/identity-events-and-connectivity-plan.md#durable-projection).
+
+**Broker ownership revision, 10 November 2026:** RabbitMQ infrastructure belongs
+to separate repository `datalens-messaging`. Identity owns source/outbox/publisher
+and schemas; this service owns its consumer/projection. The local messaging
+scaffold provisions no runtime yet. See [integration ownership](docs/identity-events-and-connectivity-plan.md).
+Only documentation changes on `fix/broker-repository-boundary`; agent code is unchanged.
+
 **Current, 9 November 2026:** 3.8.2 delivery is accepted from user confirmation.
 Step 3.8.3 adds public PKCE configuration in the separate `datalens-identity`
 repository, locally verified by 109 passing identity tests in 377.38 seconds.

@@ -26,4 +26,10 @@ class UserProfileClaims(AuthenticatedPrincipal):
 
 
 class UserProfile(UserProfileClaims):
+    display_name: (
+        Annotated[str, StringConstraints(strict=True, min_length=1, max_length=256)] | None
+    ) = None
+    username: (
+        Annotated[str, StringConstraints(strict=True, min_length=1, max_length=256)] | None
+    ) = None
     profile_updated_at: AwareDatetime

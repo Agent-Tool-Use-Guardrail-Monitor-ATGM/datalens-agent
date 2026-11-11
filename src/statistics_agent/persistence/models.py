@@ -41,10 +41,38 @@ class UserProfileRecord(Base):
     )
     issuer: Mapped[str] = mapped_column(String(2048), primary_key=True)
     subject: Mapped[str] = mapped_column(String(255), primary_key=True)
-    display_name: Mapped[str | None] = mapped_column(String(255))
-    username: Mapped[str | None] = mapped_column(String(255))
+    display_name: Mapped[str | None] = mapped_column(String(256))
+    username: Mapped[str | None] = mapped_column(String(256))
     email: Mapped[str | None] = mapped_column(String(320))
     profile_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class IdentityInboxRecord(Base):
+    __tablename__ = "agent_identity_inbox"
+    __table_args__ = (CheckConstraint("octet_length(payload_digest) = 32"),)
+
+    event_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    payload_digest: Mapped[bytes] = mapped_column(LargeBinary)
+
+
+class IdentityStateRecord(Base):
+    __tablename__ = "agent_identity_state"
+
+    issuer: Mapped[str] = mapped_column(String(2048), primary_key=True)
+    subject: Mapped[str] = mapped_column(String(255), primary_key=True)
+    profile_revision: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))
+    status_revision: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))
+    token_cutoff: Mapped[int | None] = mapped_column(BigInteger)
+    disabled: Mapped[bool] = mapped_column(server_default=text("false"))
+    deleted: Mapped[bool] = mapped_column(server_default=text("false"))
+
+
+class IdentityRevokedSessionRecord(Base):
+    __tablename__ = "agent_identity_revoked_sessions"
+
+    issuer: Mapped[str] = mapped_column(String(2048), primary_key=True)
+    subject: Mapped[str] = mapped_column(String(255), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(255), primary_key=True)
 
 
 class LoginAttempt(Base):
