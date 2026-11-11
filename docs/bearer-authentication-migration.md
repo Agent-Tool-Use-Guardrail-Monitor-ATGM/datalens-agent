@@ -193,6 +193,10 @@ An old token/profile event must not undo a newer username/deletion/security even
 Do not silently drop independent session revocations because another newer event
 was already seen. No token/password/role authority is stored in display profiles.
 
+Use `BearerAccess.verify_access()` at the 3.8.7 HTTP cutover so JWT verification,
+the required `sid`, and the indexed local revocation read share one entry point.
+See the [revocation check and backfill sequence](identity-events-and-connectivity-plan.md#bearer-revocation-check).
+
 ### 3.8.6: Accepted-job grants independent of browser sessions
 
 Add versioned, nonsecret admission grants and expiry fields. Admission must atomically

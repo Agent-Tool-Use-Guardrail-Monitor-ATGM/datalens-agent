@@ -124,6 +124,9 @@ permissions, logs, retention and operator access; it is not an authorization key
 3. **3.8.5.3 Backfill and revocation integration:** reconcile existing identities
    from supported source snapshots and connect the local revocation read to
    verified access. Complete retention and replay acceptance before cutover.
+   - **3.8.5.3a:** Enforce local revocation on verified bearer access in the agent.
+   - **3.8.5.3b:** Publish versioned existing-user snapshots from identity and
+     verify replay through the broker and projection.
 
 ### Durable projection
 
@@ -202,10 +205,19 @@ events. Alert on delivery lag, reconnect failures, backlog and dead letters.
 
 Bootstrap existing users from an identity-owned supported snapshot/backfill
 process; then reconcile safely with the event stream using source revisions.
-Use the same versioned contract, not an agent read of identity database tables.
-Define tombstone/revocation/inbox retention against maximum token lifetime and
-the permitted replay/backfill window before deleting metadata. Late messages
-must never recreate deleted PII after tombstone cleanup.
+Use the same versioned contract. Keep receipts, identity state (including
+deletion tombstones), and session revocations until a bounded replay/backfill
+window and a safe pruning policy have been verified. Replays must never restore
+deleted profile data.
+
+### Bearer revocation check
+
+`BearerAccess.verify_access()` verifies the JWT first, requires a valid `sid`,
+and then checks the indexed PostgreSQL projection for that exact issuer and
+subject. A revoked token or absent `sid` returns `login_required`. A failed
+or timed-out database read returns `identity_unavailable`. A display profile
+is optional. The HTTP cutover in 3.8.7 must use `BearerAccess` as its bearer
+entry point. Legacy cookie routes still use their existing authorization path.
 
 Authentication still requires a valid signed access token. An event cannot grant
 access without one. After JWT checks, use a small indexed local revocation read

@@ -2,21 +2,28 @@
 
 import asyncio
 import base64
+import json
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 import httpx
 import jwt
 import pytest
 from pydantic import ValidationError
+from sqlalchemy.exc import OperationalError
 
 from statistics_agent.contracts.auth import AuthFailureCode
+from statistics_agent.core.bearer_access import BearerAccess
 from statistics_agent.core.jwt_verifier import AuthenticationError, ExpiredAccess
 from statistics_agent.core.resource_auth import ResourceAuthSettings, load_resource_auth_settings
 from statistics_agent.core.resource_verifier import ResourceServerVerifier
 from statistics_agent.core.settings import ConfigurationError
+from statistics_agent.persistence.identity_projection import IdentityProjection
 from support.auth import SyntheticProvider
+from support.database import run
+from support.datasets import storage
 
 
 @asynccontextmanager
@@ -39,6 +46,82 @@ def token(source, *, lifetime=300, not_before_in=None, **changes):
     if not_before_in is not None:
         claims["nbf"] = now + not_before_in
     return source.token(changes=claims | changes)
+
+
+@pytest.mark.postgres
+def test_bearer_access_applies_committed_revocations_and_replay(migration_settings):
+    async def exercise():
+        async with (
+            storage(migration_settings) as (database, _),
+            verifier() as (source, client),
+        ):
+            projection = IdentityProjection(database, client.settings.issuer)
+            bearer = BearerAccess(client, projection)
+            old = token(source, sid="old-session")
+            access = await bearer.verify_access(old)
+
+            def event(kind, data):
+                return json.dumps(
+                    {
+                        "schema_version": 1,
+                        "event_id": str(uuid4()),
+                        "event_type": kind,
+                        "issuer": access.identity.issuer,
+                        "subject": access.identity.subject,
+                        "occurred_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+                        "data": data,
+                    }
+                ).encode()
+
+            body = event(
+                "user.session.revoked",
+                {"security_revision": 1, "session_id": "old-session", "reason": "logout"},
+            )
+            assert await projection.apply(body)
+            assert not await projection.apply(body)
+            with pytest.raises(AuthenticationError, match="login_required"):
+                await bearer.verify_access(old)
+
+            other = token(source, sid="other-session", iat=access.issued_at, exp=access.expires_at)
+            await bearer.verify_access(other)
+            assert await projection.apply(
+                event(
+                    "user.sessions.revoked",
+                    {
+                        "security_revision": 2,
+                        "tokens_issued_at_or_before": access.issued_at,
+                        "reason": "logout_all",
+                    },
+                )
+            )
+            with pytest.raises(AuthenticationError, match="login_required"):
+                await bearer.verify_access(other)
+
+    run(exercise())
+
+
+def test_bearer_access_requires_a_verified_session_and_fails_closed(monkeypatch):
+    async def exercise():
+        async with verifier() as (source, client):
+            projection = IdentityProjection(None, client.settings.issuer)
+            reads = []
+
+            async def failed_read(identity, **kwargs):
+                reads.append((identity, kwargs))
+                raise OperationalError(None, None, RuntimeError("private database error"))
+
+            monkeypatch.setattr(projection, "is_revoked", failed_read)
+            bearer = BearerAccess(client, projection)
+            for bad in ("invalid-jwt", token(source), token(source, sid="", aud="wrong")):
+                with pytest.raises(AuthenticationError, match="login_required"):
+                    await bearer.verify_access(bad)
+            assert not reads
+
+            with pytest.raises(AuthenticationError, match="identity_unavailable"):
+                await bearer.verify_access(token(source, sid="verified-session"))
+            assert len(reads) == 1
+
+    asyncio.run(exercise())
 
 
 def test_resource_verifier_needs_no_private_secret_files_or_database(monkeypatch):
