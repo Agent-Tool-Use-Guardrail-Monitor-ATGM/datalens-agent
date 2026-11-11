@@ -1,12 +1,12 @@
 """Real PostgreSQL atomicity, ownership, snapshots and restart persistence."""
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import event, func, insert, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import event, func, insert, select, text, update
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from statistics_agent.agent.prompts import PROMPT
 from statistics_agent.contracts.agent import AgentVersions
@@ -25,6 +25,7 @@ from statistics_agent.persistence.conversations import (
     ConversationNotFoundError,
     ConversationStore,
     IdempotencyConflictError,
+    RunAdmissionGrant,
     RunInputUnavailableError,
 )
 from statistics_agent.persistence.models import (
@@ -34,6 +35,7 @@ from statistics_agent.persistence.models import (
     RunJob,
     RunRecord,
 )
+from statistics_agent.persistence.schema import migration_config
 from support.database import apply, run, sandbox
 from support.datasets import CONTENT, application, owner
 
@@ -134,9 +136,24 @@ def test_replay_precedes_busy_and_preserves_original_config_and_attachment_snaps
             request, config = submission(data.dataset_id), configuration()
             first = await store.admit(actor, cid, request, config)
             await store.set_attachments(actor, cid, DatasetSelection())
-            replay = await store.admit(actor, cid, request, configuration())
+            new_session = owner(roles=["admin", "user"])
+            replay = await store.admit(new_session, cid, request, configuration())
             assert replay.replayed and replay.configuration == config
             assert replay.run == first.run and replay.datasets == (data,)
+            async with database.session() as session:
+                job = await session.get(RunJob, first.run.run_id)
+                assert job.admission_grant == {
+                    "schema_version": 1,
+                    "actor": {
+                        "issuer": actor.issuer,
+                        "subject": actor.subject,
+                        "roles": ["user"],
+                        "email_verified": True,
+                    },
+                }
+                assert RunAdmissionGrant.model_validate(job.admission_grant).actor.roles == {"user"}
+                assert job.auth_session_ref == actor.auth_session_ref
+                assert job.queue_expires_at == first.run.created_at + timedelta(minutes=10)
             assert replay.attachment_version == 1
             assert await store.attachments(actor, cid) == ()
             with pytest.raises(IdempotencyConflictError):
@@ -149,6 +166,39 @@ def test_replay_precedes_busy_and_preserves_original_config_and_attachment_snaps
             with pytest.raises(ConversationBusyError):
                 await store.admit(actor, cid, submission(), config)
             assert await counts(database) == (1, 1, 1)
+
+    run(exercise())
+
+
+def test_admission_grant_migration_preserves_legacy_job_and_guards_downgrade(migration_settings):
+    async def exercise():
+        async with application(migration_settings) as (database, _, _, datasets):
+            actor, store, cid, data = await fixture(database, datasets)
+            accepted = await store.admit(actor, cid, submission(data.dataset_id), configuration())
+            run_id = accepted.run.run_id
+            config = migration_config()
+            async with database.session() as session:
+                schema = await session.scalar(select(func.current_schema()))
+            config.attributes["version_table_schema"] = schema
+            previous = "0010_identity_projection"
+            with pytest.raises(DBAPIError, match="Drain granted jobs"):
+                await apply(database, schema, config, "downgrade", previous)
+            async with database.session() as session:
+                # A mixed-version writer can leave the new columns empty.
+                await session.execute(
+                    update(RunJob)
+                    .where(RunJob.run_id == run_id)
+                    .values(admission_grant=None, queue_expires_at=None)
+                )
+                await session.commit()
+            await apply(database, schema, config, "downgrade", previous)
+            await apply(database, schema, config, "upgrade", "head")
+            async with database.session() as session:
+                job = await session.get(RunJob, run_id)
+                assert job.auth_session_ref == actor.auth_session_ref
+                assert job.created_at == accepted.run.created_at
+                assert job.admission_grant is None and job.queue_expires_at is None
+                assert await session.scalar(text("SELECT count(*) FROM agent_runs")) == 1
 
     run(exercise())
 
@@ -269,6 +319,8 @@ def test_history_and_replay_survive_new_store_and_connection_pool(migration_sett
                 "run_id",
                 "created_at",
                 "auth_session_ref",
+                "admission_grant",
+                "queue_expires_at",
                 "claim_id",
                 "lease_expires_at",
             }
