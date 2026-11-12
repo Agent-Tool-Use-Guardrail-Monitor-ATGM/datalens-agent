@@ -1,5 +1,10 @@
 # Plan 3.8.2 — Session-independent JWT verification
 
+The verifier now backs the default HTTP API. See the
+[3.8.7 rollout contract](bearer-authentication-migration.md#http-contract-and-rollout).
+Malformed display hints are discarded. Signed identity and permissions remain
+authoritative for access.
+
 ## CI correction — collection-time token timestamps
 
 The user's CI report had 1,135 passes and one failure in the new excessive-lifetime

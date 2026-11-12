@@ -10,6 +10,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from statistics_agent.agent.prompts import PROMPT
 from statistics_agent.contracts.agent import AgentVersions
+from statistics_agent.contracts.auth import VerifiedIdentity
 from statistics_agent.contracts.common import ConfigurationReference
 from statistics_agent.contracts.conversations import (
     DatasetSelection,
@@ -199,6 +200,24 @@ def test_admission_grant_migration_preserves_legacy_job_and_guards_downgrade(mig
                 assert job.created_at == accepted.run.created_at
                 assert job.admission_grant is None and job.queue_expires_at is None
                 assert await session.scalar(text("SELECT count(*) FROM agent_runs")) == 1
+
+    run(exercise())
+
+
+def test_verified_bearer_identity_admits_without_browser_session(migration_settings):
+    async def exercise():
+        async with application(migration_settings) as (database, _, _, datasets):
+            actor, store, cid, data = await fixture(database, datasets)
+            principal = VerifiedIdentity.model_validate(
+                actor.model_dump(exclude={"auth_session_ref"})
+            )
+            accepted = await store.admit(
+                principal, cid, submission(data.dataset_id), configuration()
+            )
+            async with database.session() as session:
+                job = await session.get(RunJob, accepted.run.run_id)
+                assert job.auth_session_ref is None
+                assert RunAdmissionGrant.model_validate(job.admission_grant).actor == principal
 
     run(exercise())
 

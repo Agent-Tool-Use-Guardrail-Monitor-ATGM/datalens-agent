@@ -5,7 +5,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from statistics_agent.contracts.common import AuthenticatedPrincipal
 from statistics_agent.contracts.users import UserProfile, UserProfileClaims
-from statistics_agent.persistence.models import UserProfileRecord
+from statistics_agent.persistence.models import IdentityStateRecord, UserProfileRecord
 from statistics_agent.persistence.ownership import owner_filter
 
 
@@ -62,14 +62,21 @@ class UserProfileStore:
                 None if record is None else UserProfile.model_validate(record, from_attributes=True)
             )
 
-    async def get(self, principal: AuthenticatedPrincipal) -> UserProfile | None:
+    async def get(
+        self, principal: AuthenticatedPrincipal, *, projected_only: bool = False
+    ) -> UserProfile | None:
         """Read only the caller-supplied trusted identity, never by email/name."""
         async with self.database.session() as session:
-            record = await session.scalar(
-                select(UserProfileRecord).where(
-                    owner_filter(UserProfileRecord.issuer, UserProfileRecord.subject, principal)
-                )
+            query = select(UserProfileRecord).where(
+                owner_filter(UserProfileRecord.issuer, UserProfileRecord.subject, principal)
             )
+            if projected_only:
+                query = query.join(
+                    IdentityStateRecord,
+                    (IdentityStateRecord.issuer == UserProfileRecord.issuer)
+                    & (IdentityStateRecord.subject == UserProfileRecord.subject),
+                ).where(IdentityStateRecord.profile_revision > 0, ~IdentityStateRecord.deleted)
+            record = await session.scalar(query)
             return (
                 None if record is None else UserProfile.model_validate(record, from_attributes=True)
             )

@@ -1,5 +1,16 @@
 # DataLens statistics-agent development
 
+**12 November 2026 - 3.8.7 Bearer HTTP and CORS cutover**
+
+The API defaults to Bearer authentication. `GET /auth/me` returns the caller's
+projected profile or a synchronizing state. Set exact frontend origins using
+`AUTH_CORS_ORIGINS`. Legacy cookie auth is available with `AUTH_HTTP_MODE=legacy`
+for coordinated rollback. [HTTP contract and rollout](docs/bearer-authentication-migration.md#http-contract-and-rollout).
+
+All 1,145 non-browser tests passed. Real Chromium/Keycloak verified public PKCE
+login, refresh, logout and browser CORS. A separate browser check verified
+legacy login in rollback mode. Required PR CI remains pending.
+
 **12 November 2026 - 3.8.6b Worker grant enforcement**
 
 Workers run granted jobs using the accepted actor and pinned scope. A queued
@@ -388,7 +399,8 @@ contact infrastructure. Lifespan tracks startup/shutdown and emits service event
 step 1.7 now creates the lazy database pool here and disposes it on shutdown.
 
 From the service directory with its `.venv` activated, create an ignored `.env`
-from `.env.example` if needed, replace placeholder configuration, and start:
+from `.env.example` if needed. Add resource-auth settings from
+`.env.resource-auth.example`, replace placeholders, and start:
 
 ```powershell
 python -m uvicorn statistics_agent.app:create_app --factory --loop statistics_agent.core.event_loop:create_event_loop --env-file .env --host 127.0.0.1 --port 8000 --no-access-log
@@ -397,8 +409,8 @@ python -m uvicorn statistics_agent.app:create_app --factory --loop statistics_ag
 The explicit `--env-file` is local development only; deployment injects variables
 and omits it. The PostgreSQL URL must be structurally valid, but the shell opens
 connections only when an operation needs one. `/docs` and `/openapi.json` exist only in development/test;
-staging/production disable them. Other paths return safe 404 envelopes. There are
-no business/authentication endpoints yet; health probes are documented below. HTTPX/TestClient test routes
+staging/production disable them. Bearer mode exposes `GET /auth/me`. Health
+probes are documented below. HTTPX/TestClient test routes
 are registered only in the tests, never in the factory.
 
 `X-Request-ID` accepts one canonical UUID, otherwise generates a fresh UUID. The

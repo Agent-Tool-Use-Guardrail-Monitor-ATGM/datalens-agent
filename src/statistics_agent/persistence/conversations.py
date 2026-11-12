@@ -247,12 +247,19 @@ class ConversationStore:
 
     async def admit(
         self,
-        principal: AuthorizedPrincipal,
+        principal: VerifiedIdentity,
         conversation_id,
         submission: RunSubmission,
         configuration: AdmissionConfiguration,
     ) -> StoredAdmission:
-        principal = AuthorizedPrincipal.model_validate(principal, strict=True)
+        session_ref = None
+        if isinstance(principal, AuthorizedPrincipal):
+            session_ref = AuthorizedPrincipal.model_validate(
+                principal, strict=True
+            ).auth_session_ref
+        principal = VerifiedIdentity.model_validate(
+            principal.model_dump(exclude={"auth_session_ref"}), strict=True
+        )
         submission = RunSubmission.model_validate(submission, strict=True)
         configuration = AdmissionConfiguration.model_validate(configuration, strict=True)
         fingerprint = hashlib.sha256(
@@ -366,12 +373,10 @@ class ConversationStore:
                 RunJob(
                     run_id=run_id,
                     created_at=now,
-                    auth_session_ref=principal.auth_session_ref,
+                    auth_session_ref=session_ref,
                     admission_grant=RunAdmissionGrant(
                         schema_version=1,
-                        actor=VerifiedIdentity.model_validate(
-                            principal.model_dump(exclude={"auth_session_ref"})
-                        ),
+                        actor=principal,
                     ).model_dump(mode="json"),
                     queue_expires_at=now + timedelta(minutes=10),
                 )

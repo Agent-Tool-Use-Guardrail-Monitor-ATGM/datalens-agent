@@ -11,7 +11,7 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
-from statistics_agent.app import create_app
+from app_support import create_legacy_app as create_app
 from statistics_agent.contracts.sessions import LoginStart
 from statistics_agent.core.auth import AuthSettings
 from statistics_agent.core.settings import ConfigurationError, Settings
