@@ -21,8 +21,8 @@ are supplied by the environment. Importing the module does not read credentials.
 Worker startup requires current agent schema, the existing authentication settings,
 client-secret/encryption-key files and `SERVICE_MODEL_API_KEY`. API and worker
 share the agent database and encryption keyring; neither reads Keycloak's database.
-Starting the worker does not create jobs or enable submission routes. HTTP
-admission remains step 7.7; tests use internal authenticated admission.
+Starting the worker consumes jobs from the shared PostgreSQL database.
+Submit work through the [Bearer workspace API](workspace-api.md).
 
 The initial capacity is one valid active lease across all worker replicas in the
 agent database. A short transaction uses a shared advisory admission guard and

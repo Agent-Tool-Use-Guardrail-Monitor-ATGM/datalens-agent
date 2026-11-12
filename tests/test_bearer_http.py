@@ -125,6 +125,7 @@ def test_profile_comes_from_projection_and_revocation_is_enforced(api):
         )
         revoked = client.get("/auth/me", headers=headers)
         assert revoked.status_code == 401 and revoked.headers["www-authenticate"] == "Bearer"
+        assert client.get("/v1/datasets", headers=headers).status_code == 401
         assert (
             client.get("/auth/me", headers=credentials(source, sub=subject, sid="new")).status_code
             == 200
@@ -200,6 +201,10 @@ def test_bearer_roles_expiry_and_client_audience(api):
     ):
         assert (
             client.get("/auth/me", headers=credentials(source, **changes)).status_code == expected
+        )
+        assert (
+            client.get("/v1/datasets", headers=credentials(source, **changes)).status_code
+            == expected
         )
     response = client.get(
         "/auth/me", headers=credentials(source, resource_access={"agent-api": {"roles": ["admin"]}})
