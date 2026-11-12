@@ -337,6 +337,7 @@ class RunJob(Base):
     auth_session_ref: Mapped[UUID | None] = mapped_column(Uuid)
     admission_grant: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     queue_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    execution_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     claim_id: Mapped[UUID | None] = mapped_column(Uuid)
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (

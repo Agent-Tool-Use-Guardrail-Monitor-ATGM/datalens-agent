@@ -82,7 +82,7 @@ def answer(body):
 
 
 @asynccontextmanager
-async def environment(settings, handler=None, *, lease=30):
+async def environment(settings, handler=None, *, lease=30, legacy=False):
     async with application(settings) as (database, artifacts, parser, datasets):
         source = SyntheticProvider()
         provider = source.client()
@@ -137,6 +137,14 @@ async def environment(settings, handler=None, *, lease=30):
             ),
             configuration,
         )
+        if legacy:
+            async with database.session() as session:
+                await session.execute(
+                    update(RunJob)
+                    .where(RunJob.run_id == admitted.run.run_id)
+                    .values(admission_grant=None, queue_expires_at=None)
+                )
+                await session.commit()
         requests = []
         held = ContextVar("transaction_held", default=False)
         original_session = database.session

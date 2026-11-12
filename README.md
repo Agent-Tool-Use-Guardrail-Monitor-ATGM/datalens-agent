@@ -1,5 +1,14 @@
 # DataLens statistics-agent development
 
+**12 November 2026 - 3.8.6b Worker grant enforcement**
+
+Workers run granted jobs using the accepted actor and pinned scope. A queued
+grant expires after ten minutes. Migration `0012_worker_execution_deadline`
+persists the execution deadline so heartbeats and restarts cannot extend it.
+The non-browser suite passed 1,139 tests. Browser checks remain for PR CI.
+The HTTP cutover is step 3.8.7.
+[Worker grants and rollout](docs/bearer-authentication-migration.md#386-accepted-job-grants-independent-of-browser-sessions).
+
 **12 November 2026 - 3.8.6a Atomic run admission grants**
 
 Migration `0011_run_admission_grants` adds a versioned actor snapshot and a

@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, Field, StringConstraints, model_validator
 
-from statistics_agent.contracts.auth import AuthorizedPrincipal
+from statistics_agent.contracts.auth import AuthorizedPrincipal, VerifiedIdentity
 from statistics_agent.contracts.clarification import RequestClarification
 from statistics_agent.contracts.common import (
     ArtifactReference,
@@ -23,7 +23,7 @@ type BoundedText = Annotated[str, StringConstraints(strict=True, max_length=16_3
 class AgentContext(Contract):
     """Server-supplied authorization reference, never proof of ongoing access."""
 
-    principal: AuthorizedPrincipal
+    principal: AuthorizedPrincipal | VerifiedIdentity
     run_id: UUID
     session_id: UUID
     request_id: UUID

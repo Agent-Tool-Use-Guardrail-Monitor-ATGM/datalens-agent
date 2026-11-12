@@ -75,9 +75,14 @@ async def finish_run(database, execution: StatisticsRun, *, claim_id=None):
     """Persist trusted runner output after caller's access check, never client JSON.
 
     Recheck stored ownership and artifact identity in the terminal transaction.
-    Claimed jobs require the matching live attempt, request and browser binding.
+    Claimed jobs require the matching live attempt, request and job actor.
     """
-    from statistics_agent.persistence.jobs import LeaseLost, finish_attempt, require_lease
+    from statistics_agent.persistence.jobs import (
+        LeaseLost,
+        finish_attempt,
+        require_job_actor,
+        require_lease,
+    )
 
     execution = StatisticsRun.model_validate(execution, strict=True)
     context = execution.state.context
@@ -100,12 +105,9 @@ async def finish_run(database, execution: StatisticsRun, *, claim_id=None):
         if claim_id is not None or (job is not None and job.claim_id is not None):
             await require_lease(session, row.id, claim_id)
             attempt = await session.get(RunAttemptRecord, claim_id)
-            if (
-                context.session_id != claim_id
-                or context.request_id != attempt.request_id
-                or context.principal.auth_session_ref != job.auth_session_ref
-            ):
+            if context.session_id != claim_id or context.request_id != attempt.request_id:
                 raise LeaseLost
+            require_job_actor(job, context.principal)
         admission = _admission(row)
         if row.lifecycle == "finished":
             raise RunInputUnavailableError
