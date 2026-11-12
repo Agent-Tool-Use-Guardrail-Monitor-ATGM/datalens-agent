@@ -59,6 +59,10 @@ class RunInputUnavailableError(LookupError):
         super().__init__("Selected resource unavailable")
 
 
+class AdmissionUnavailableError(RuntimeError):
+    pass
+
+
 class RunAdmissionGrant(Contract):
     """Actor accepted for this job; the referenced run pins its resource scope."""
 
@@ -250,7 +254,7 @@ class ConversationStore:
         principal: VerifiedIdentity,
         conversation_id,
         submission: RunSubmission,
-        configuration: AdmissionConfiguration,
+        configuration: AdmissionConfiguration | None,
     ) -> StoredAdmission:
         session_ref = None
         if isinstance(principal, AuthorizedPrincipal):
@@ -261,7 +265,8 @@ class ConversationStore:
             principal.model_dump(exclude={"auth_session_ref"}), strict=True
         )
         submission = RunSubmission.model_validate(submission, strict=True)
-        configuration = AdmissionConfiguration.model_validate(configuration, strict=True)
+        if configuration is not None:
+            configuration = AdmissionConfiguration.model_validate(configuration, strict=True)
         fingerprint = hashlib.sha256(
             json.dumps(
                 submission.model_dump(mode="json", exclude={"idempotency_key"}),
@@ -293,6 +298,8 @@ class ConversationStore:
                 is not None
             ):
                 raise ConversationBusyError
+            if configuration is None:
+                raise AdmissionUnavailableError
             datasets = await self._datasets(
                 session,
                 principal,

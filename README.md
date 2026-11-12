@@ -1,5 +1,15 @@
 # DataLens statistics-agent development
 
+## Plan 7.7 workspace API
+
+Bearer mode exposes owned CSV upload and preview, conversations and attachments,
+question submission, run polling and verified results. Run the API and worker
+against the same agent database and LLM profile. Use `/openapi.json` in development
+to generate frontend types. [Routes, limits and retry behavior](docs/workspace-api.md)
+
+Local regression passed 1,146 tests with disposable PostgreSQL. Browser and
+real RabbitMQ acceptance remain part of the required PR gate.
+
 **12 November 2026 - 3.8.7 Bearer HTTP and CORS cutover**
 
 The API defaults to Bearer authentication. `GET /auth/me` returns the caller's

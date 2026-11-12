@@ -22,6 +22,9 @@ type MessageText = Annotated[
 ]
 type Digest = Annotated[str, StringConstraints(strict=True, pattern=r"^[0-9a-f]{64}$")]
 type RunOutcome = Literal["completed", "needs_input", "unsupported", "incomplete"]
+type ConversationTitle = Annotated[
+    str, StringConstraints(strict=True, min_length=1, max_length=120, pattern=r"\S")
+]
 
 
 class DatasetSelection(Contract):
@@ -67,9 +70,7 @@ class RunSubmission(Contract):
 
 class Conversation(Contract):
     conversation_id: UUID
-    title: Annotated[
-        str, StringConstraints(strict=True, min_length=1, max_length=120, pattern=r"\S")
-    ] = Field(repr=False)
+    title: ConversationTitle = Field(repr=False)
     created_at: AwareDatetime
 
 

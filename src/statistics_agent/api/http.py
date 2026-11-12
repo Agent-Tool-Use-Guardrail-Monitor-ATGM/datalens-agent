@@ -49,6 +49,9 @@ async def http_error(request: Request, error: HTTPException) -> JSONResponse:
         403: ("forbidden", "Access denied"),
         404: ("not_found", "Resource not found"),
         405: ("method_not_allowed", "Method not allowed"),
+        413: ("request_too_large", "Request too large"),
+        415: ("unsupported_media_type", "Unsupported media type"),
+        422: ("validation_error", "Request validation failed"),
         429: ("rate_limited", "Too many requests"),
         503: ("service_unavailable", "Service unavailable"),
     }
