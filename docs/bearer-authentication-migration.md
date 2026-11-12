@@ -217,6 +217,19 @@ Focused verification passed 69 migration, admission and legacy worker checks.
 time, authorize only the granted run and its pinned scope, and terminalize
 expired queued jobs before dispatch.
 
+Migration `0012_worker_execution_deadline` stores the claim deadline using
+PostgreSQL time and the pinned run timeout. Heartbeats cannot extend it.
+Recovery finalizes expired work as incomplete and keeps verified partial
+results. Queued grants that expire finish without an execution attempt and
+release their conversation. A fresh submission uses a new idempotency key.
+
+Granted jobs use the original actor snapshot, job ownership and live attempt
+at authorization, checkpoint and completion. Browser logout and token expiry
+do not interrupt a granted job. Older jobs without grants still use the
+legacy session check. During rollback, drain claimed jobs with the matching
+worker before downgrading 0012. The migration refuses to remove a deadline
+while a claimed job is present.
+
 Preserve lease, ownership and checkpoint/terminal fences, including partial
 results. Use database time for execution bounds. Queue expiry must release
 the conversation without dispatching work. Worker restarts must honor the

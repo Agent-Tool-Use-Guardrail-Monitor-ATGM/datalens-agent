@@ -9,6 +9,7 @@ import httpx
 import pytest
 from pydantic import SecretStr
 from sqlalchemy import event, func, select, update
+from sqlalchemy.exc import DBAPIError
 
 from statistics_agent.contracts.conversations import RunSubmission
 from statistics_agent.core.model_settings import ModelSettings
@@ -22,8 +23,9 @@ from statistics_agent.persistence.models import (
     RunJob,
     RunRecord,
 )
+from statistics_agent.persistence.schema import migration_config
 from support.auth import new_session
-from support.database import run
+from support.database import apply, run
 from support.worker import answer, call, environment, expire, stored
 
 pytestmark = pytest.mark.postgres
@@ -59,7 +61,7 @@ def test_worker_executes_with_real_auth_tools_checkpoint_and_committed_evidence(
 @pytest.mark.parametrize("denial", ["revoked", "expired", "missing", "foreign", "deleted"])
 def test_invalid_original_session_never_dispatches(migration_settings, denial):
     async def exercise():
-        async with environment(migration_settings) as env:
+        async with environment(migration_settings, legacy=True) as env:
             if denial == "revoked":
                 await env.auth.revoke_session(env.actor.auth_session_ref)
             elif denial == "deleted":
@@ -100,7 +102,7 @@ def test_invalid_original_session_never_dispatches(migration_settings, denial):
 
 def test_worker_renews_expired_jwt_through_existing_session_lifecycle(migration_settings):
     async def exercise():
-        async with environment(migration_settings) as env:
+        async with environment(migration_settings, legacy=True) as env:
             from datetime import UTC, datetime
 
             now = int(datetime.now(UTC).timestamp())
@@ -125,12 +127,125 @@ def test_revocation_between_model_and_tool_denies_execution(migration_settings):
             await env.auth.revoke_session(env.actor.auth_session_ref)
             return answer(body)
 
-        async with environment(migration_settings, handler) as env:
+        async with environment(migration_settings, handler, legacy=True) as env:
             await env.worker.run_once()
             assert len(env.requests) == 1
             assert (await stored(env)).outcome == "incomplete"
             async with env.db.session() as session:
                 assert await session.scalar(select(func.count()).select_from(DatasetArtifact)) == 0
+
+    run(exercise())
+
+
+def test_granted_job_continues_after_logout_without_identity_access(
+    migration_settings, monkeypatch
+):
+    async def exercise():
+        async def handler(body):
+            await env.auth.revoke_session(env.actor.auth_session_ref)
+            return answer(body)
+
+        async def unexpected_access(claim):
+            pytest.fail("Granted jobs must not look up browser access")
+
+        async with environment(migration_settings, handler) as env:
+            monkeypatch.setattr(env.worker.access, "resolve", unexpected_access)
+            assert await env.worker.run_once()
+            assert (await stored(env)).outcome == "completed"
+            assert len(env.requests) == 2
+
+    run(exercise())
+
+
+@pytest.mark.parametrize("direct", [False, True])
+def test_expired_queue_releases_conversation_without_dispatch(migration_settings, direct):
+    async def exercise():
+        async with environment(migration_settings) as env:
+            async with env.db.session() as session:
+                now = func.statement_timestamp()
+                await session.execute(
+                    update(RunJob).values(
+                        created_at=now - timedelta(minutes=11),
+                        queue_expires_at=now - timedelta(minutes=1),
+                    )
+                )
+                await session.commit()
+            if direct:
+                assert await env.jobs.claim() is None
+            else:
+                assert await env.worker.run_once()
+            result = await stored(env)
+            assert result.outcome == "incomplete" and result.started_at is None
+            assert "expired before" in result.completion.answer.explanation
+            assert not env.requests
+            async with env.db.session() as session:
+                assert await session.get(RunJob, result.run_id) is None
+                assert await session.scalar(select(func.count()).select_from(RunAttemptRecord)) == 0
+            retry = await env.conversations.admit(
+                env.actor,
+                result.conversation_id,
+                RunSubmission(
+                    idempotency_key=uuid4(), question="Try again", selection=env.selection
+                ),
+                env.configuration,
+            )
+            assert retry.run.lifecycle == "queued"
+
+    run(exercise())
+
+
+@pytest.mark.parametrize("bad_grant", ["foreign", "unsupported_version"])
+def test_invalid_grant_does_not_fall_back_to_browser_access(migration_settings, bad_grant):
+    async def exercise():
+        async with environment(migration_settings) as env:
+            async with env.db.session() as session:
+                job = await session.get(RunJob, env.admitted.run.run_id)
+                grant = job.admission_grant
+                if bad_grant == "foreign":
+                    grant = grant | {"actor": grant["actor"] | {"subject": "foreign"}}
+                else:
+                    grant = grant | {"schema_version": 2}
+                job.admission_grant = grant
+                await session.commit()
+            await env.worker.run_once()
+            result = await stored(env)
+            assert result.outcome == "incomplete" and result.started_at is None
+            assert not env.requests
+
+    run(exercise())
+
+
+def test_execution_deadline_survives_heartbeat_and_fences_recovery(migration_settings):
+    async def exercise():
+        async with environment(migration_settings) as env:
+            claim = await env.jobs.claim()
+            assert claim is not None
+            assert claim.deadline - claim.claimed_at == timedelta(
+                seconds=env.configuration.profile.run_timeout_seconds
+            )
+            await env.jobs.heartbeat(claim)
+            async with env.db.session() as session:
+                job = await session.get(RunJob, claim.run_id)
+                assert job.execution_expires_at == claim.deadline
+                assert job.lease_expires_at <= claim.deadline
+                schema = await session.scalar(select(func.current_schema()))
+            config = migration_config()
+            config.attributes["version_table_schema"] = schema
+            with pytest.raises(DBAPIError, match="Drain claimed jobs"):
+                await apply(env.db, schema, config, "downgrade", "0011_run_admission_grants")
+            async with env.db.session() as session:
+                await session.execute(
+                    update(RunJob).values(
+                        execution_expires_at=func.clock_timestamp() - timedelta(seconds=1)
+                    )
+                )
+                await session.commit()
+            restarted = JobStore(env.db)
+            with pytest.raises(LeaseLost):
+                await restarted.heartbeat(claim)
+            assert await restarted.recover_one()
+            assert (await stored(env)).outcome == "incomplete"
+            assert not env.requests
 
     run(exercise())
 
@@ -531,21 +646,20 @@ def test_evidence_sequence_failure_rolls_back_without_a_gap(migration_settings):
     run(exercise())
 
 
-@pytest.mark.parametrize("field", ["session_id", "request_id", "auth_session_ref"])
-def test_terminal_requires_original_execution_and_browser_binding(
-    migration_settings, monkeypatch, field
-):
+@pytest.mark.parametrize("field", ["session_id", "request_id", "auth_session_ref", "roles"])
+def test_terminal_requires_original_execution_and_job_actor(migration_settings, monkeypatch, field):
     async def exercise():
-        async with environment(migration_settings) as env:
+        async with environment(migration_settings, legacy=field == "auth_session_ref") as env:
             import statistics_agent.worker as runtime
             from statistics_agent.persistence.completions import finish_run
 
             async def finish(database, execution, *, claim_id):
                 context = execution.state.context
-                if field == "auth_session_ref":
+                if field in {"auth_session_ref", "roles"}:
+                    value = uuid4() if field == "auth_session_ref" else frozenset({"admin"})
                     context = context.model_copy(
                         update={
-                            "principal": context.principal.model_copy(update={field: uuid4()}),
+                            "principal": context.principal.model_copy(update={field: value}),
                         }
                     )
                 else:

@@ -4,7 +4,7 @@ import argparse
 import asyncio
 import itertools
 import signal
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from statistics_agent.agent.composition import create_statistics_session
 from statistics_agent.agent.prompts import PROMPT
@@ -17,7 +17,7 @@ from statistics_agent.core.event_loop import create_event_loop
 from statistics_agent.core.session_lifecycle import SessionLifecycle
 from statistics_agent.persistence.completions import finish_run
 from statistics_agent.persistence.conversations import ConversationStore
-from statistics_agent.persistence.jobs import JobStore, LeaseLost, require_lease
+from statistics_agent.persistence.jobs import JobStore, LeaseLost, require_job_actor, require_lease
 from statistics_agent.tools.statistics import STATISTICS_TOOLSET
 
 
@@ -81,8 +81,8 @@ class AgentWorker:
         self.model_settings, self.toolset, self.transport = model_settings, toolset, transport
         self.conversations = ConversationStore(jobs.database)
 
-    async def _execute(self, claim):
-        principal = await self.access.resolve(claim)
+    async def _execute(self, claim, deadline):
+        principal = claim.granted_actor or await self.access.resolve(claim)
         if principal is None:
             await self.jobs.interrupt(claim, "access_unavailable")
             return
@@ -103,10 +103,13 @@ class AgentWorker:
         )
 
         async def authorize(current):
-            if current != context or await self.access.resolve(claim) != principal:
+            if current != context:
+                return False
+            if claim.granted_actor is None and await self.access.resolve(claim) != principal:
                 return False
             async with self.jobs.database.session() as session:
-                await require_lease(session, claim.run_id, claim.attempt_id)
+                job, _ = await require_lease(session, claim.run_id, claim.attempt_id)
+                require_job_actor(job, principal)
             return True
 
         async def before_model(request):
@@ -141,7 +144,7 @@ class AgentWorker:
             authorize=authorize,
             sink=sink,
             sequence=sequence,
-            deadline=claim.deadline,
+            deadline=deadline,
             checkpoint=checkpoint,
         )
         prepared = await session.prepare_context(self.conversations, self.datasets, self.artifacts)
@@ -159,15 +162,26 @@ class AgentWorker:
     async def run_once(self):
         if await self.jobs.recover_one():
             return True
+        clock = asyncio.get_running_loop().time
+        claim_started = clock()
         claim = await self.jobs.claim()
         if claim is None:
             return False
-        work = asyncio.create_task(self._execute(claim))
+        # Count claim round-trip time against the database budget without comparing host clocks.
+        cutoff = claim_started + (claim.deadline - claim.claimed_at).total_seconds()
+        remaining = cutoff - clock()
+        if remaining <= 0:
+            try:
+                await self.jobs.interrupt(claim, "execution_failed")
+            except LeaseLost:
+                pass
+            return True
+        deadline = datetime.now(UTC) + timedelta(seconds=remaining)
+        work = asyncio.create_task(self._execute(claim, deadline))
         heartbeat = asyncio.create_task(self._heartbeat(claim))
         reason = "execution_failed"
         try:
-            seconds = max(0, (claim.deadline - datetime.now(UTC)).total_seconds())
-            async with asyncio.timeout(seconds):
+            async with asyncio.timeout_at(cutoff):
                 done, _ = await asyncio.wait({work, heartbeat}, return_when=asyncio.FIRST_COMPLETED)
                 if work in done:
                     await work

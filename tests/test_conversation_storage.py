@@ -321,6 +321,7 @@ def test_history_and_replay_survive_new_store_and_connection_pool(migration_sett
                 "auth_session_ref",
                 "admission_grant",
                 "queue_expires_at",
+                "execution_expires_at",
                 "claim_id",
                 "lease_expires_at",
             }

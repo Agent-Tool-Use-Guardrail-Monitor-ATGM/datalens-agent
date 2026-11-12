@@ -2,10 +2,10 @@
 
 from sqlalchemy import and_
 
-from statistics_agent.contracts.auth import AuthorizedPrincipal
+from statistics_agent.contracts.common import AuthenticatedPrincipal
 
 
-def owner_filter(issuer_column, subject_column, principal: AuthorizedPrincipal):
+def owner_filter(issuer_column, subject_column, principal: AuthenticatedPrincipal):
     """Apply inside the resource query; columns come from service-owned models.
 
     Never accept an owner supplied by a client. Role membership does not widen

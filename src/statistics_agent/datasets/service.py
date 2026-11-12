@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from uuid import UUID
 
-from statistics_agent.contracts.auth import AuthorizedPrincipal
+from statistics_agent.contracts.auth import VerifiedIdentity
 from statistics_agent.contracts.datasets import DatasetLimits, DatasetMetadata, DatasetPreview
 from statistics_agent.datasets.csv import CsvValidationError, ParsedDataset
 from statistics_agent.datasets.execution import DatasetParser
@@ -41,7 +41,7 @@ class DatasetService:
         self._store = DatasetStore(database, limits=self._limits)
 
     async def ingest(
-        self, principal: AuthorizedPrincipal, *, filename: str, content: bytes
+        self, principal: VerifiedIdentity, *, filename: str, content: bytes
     ) -> DatasetMetadata:
         parsed = await self._parser.parse(content, limits=self._limits)
         # Only actual parsed facts enter the transaction. No client-supplied row
@@ -54,19 +54,17 @@ class DatasetService:
             columns=parsed.columns,
         )
 
-    async def get_metadata(
-        self, principal: AuthorizedPrincipal, dataset_id: UUID
-    ) -> DatasetMetadata:
+    async def get_metadata(self, principal: VerifiedIdentity, dataset_id: UUID) -> DatasetMetadata:
         return await self._store.get_metadata(principal, dataset_id)
 
     async def list_metadata(
-        self, principal: AuthorizedPrincipal, *, limit: int = 50, after: UUID | None = None
+        self, principal: VerifiedIdentity, *, limit: int = 50, after: UUID | None = None
     ) -> tuple[DatasetMetadata, ...]:
         return await self._store.list_metadata(principal, limit=limit, after=after)
 
     async def load(
         self,
-        principal: AuthorizedPrincipal,
+        principal: VerifiedIdentity,
         dataset_id: UUID,
         *,
         limits: DatasetLimits | None = None,
@@ -100,9 +98,9 @@ class DatasetService:
             raise DatasetIntegrityError
         return LoadedDataset(current, parsed)
 
-    async def preview(self, principal: AuthorizedPrincipal, dataset_id: UUID) -> DatasetPreview:
+    async def preview(self, principal: VerifiedIdentity, dataset_id: UUID) -> DatasetPreview:
         loaded = await self.load(principal, dataset_id)
         return loaded.parsed.preview(loaded.metadata.dataset_id)
 
-    async def delete(self, principal: AuthorizedPrincipal, dataset_id: UUID) -> bool:
+    async def delete(self, principal: VerifiedIdentity, dataset_id: UUID) -> bool:
         return await self._store.delete(principal, dataset_id)

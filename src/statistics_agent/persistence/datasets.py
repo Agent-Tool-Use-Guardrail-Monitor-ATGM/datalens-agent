@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 from pydantic import JsonValue
 from sqlalchemy import delete, select
 
-from statistics_agent.contracts.auth import AuthorizedPrincipal
+from statistics_agent.contracts.auth import VerifiedIdentity
 from statistics_agent.contracts.common import ArtifactReference
 from statistics_agent.contracts.datasets import (
     DatasetColumn,
@@ -113,12 +113,12 @@ class DatasetStore:
         )
 
     @staticmethod
-    def _owner(principal: AuthorizedPrincipal):
+    def _owner(principal: VerifiedIdentity):
         return owner_filter(Dataset.issuer, Dataset.subject, principal)
 
     async def create(
         self,
-        principal: AuthorizedPrincipal,
+        principal: VerifiedIdentity,
         *,
         filename: str,
         content: bytes,
@@ -163,9 +163,7 @@ class DatasetStore:
             await session.commit()
         return value
 
-    async def get_metadata(
-        self, principal: AuthorizedPrincipal, dataset_id: UUID
-    ) -> DatasetMetadata:
+    async def get_metadata(self, principal: VerifiedIdentity, dataset_id: UUID) -> DatasetMetadata:
         async with self._database.session() as session:
             row = await session.scalar(
                 select(Dataset).where(Dataset.id == dataset_id, self._owner(principal))
@@ -175,7 +173,7 @@ class DatasetStore:
             return _metadata(row)
 
     async def list_metadata(
-        self, principal: AuthorizedPrincipal, *, limit: int = 50, after: UUID | None = None
+        self, principal: VerifiedIdentity, *, limit: int = 50, after: UUID | None = None
     ) -> tuple[DatasetMetadata, ...]:
         if type(limit) is not int or not 1 <= limit <= 100:
             raise ValueError("Page size must be between 1 and 100")
@@ -188,7 +186,7 @@ class DatasetStore:
             rows = (await session.scalars(query.order_by(Dataset.id).limit(limit))).all()
             return tuple(_metadata(row) for row in rows)
 
-    async def get_content(self, principal: AuthorizedPrincipal, dataset_id: UUID) -> bytes:
+    async def get_content(self, principal: VerifiedIdentity, dataset_id: UUID) -> bytes:
         async with self._database.session() as session:
             row = (
                 await session.execute(
@@ -204,7 +202,7 @@ class DatasetStore:
                 raise ValueError("Stored dataset integrity check failed")
             return content
 
-    async def delete(self, principal: AuthorizedPrincipal, dataset_id: UUID) -> bool:
+    async def delete(self, principal: VerifiedIdentity, dataset_id: UUID) -> bool:
         async with self._database.session() as session:
             removed = await session.scalar(
                 delete(Dataset)
@@ -215,7 +213,7 @@ class DatasetStore:
             return removed is not None
 
     async def create_artifact(
-        self, principal: AuthorizedPrincipal, dataset_id: UUID, payload: dict[str, JsonValue]
+        self, principal: VerifiedIdentity, dataset_id: UUID, payload: dict[str, JsonValue]
     ) -> StoredArtifact:
         encoded, raw = artifact_json(payload, self._statistics_limits.max_result_bytes)
         row = DatasetArtifact(
@@ -254,9 +252,7 @@ class DatasetStore:
             payload=payload,
         )
 
-    async def get_artifact(
-        self, principal: AuthorizedPrincipal, artifact_id: UUID
-    ) -> StoredArtifact:
+    async def get_artifact(self, principal: VerifiedIdentity, artifact_id: UUID) -> StoredArtifact:
         async with self._database.session() as session:
             row = await session.scalar(
                 select(DatasetArtifact)
@@ -267,7 +263,7 @@ class DatasetStore:
                 raise DatasetNotFoundError
             return self._artifact(row)
 
-    async def delete_artifact(self, principal: AuthorizedPrincipal, artifact_id: UUID) -> bool:
+    async def delete_artifact(self, principal: VerifiedIdentity, artifact_id: UUID) -> bool:
         owned = select(Dataset.id).where(self._owner(principal))
         async with self._database.session() as session:
             removed = await session.scalar(

@@ -1,12 +1,14 @@
 """Short leased transactions, local evidence and conservative interrupted-run recovery."""
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select, update
+from pydantic import ValidationError
+from sqlalchemy import func, or_, select, update
 
 from statistics_agent.contracts.agent import StatisticsAnswer
+from statistics_agent.contracts.auth import AuthorizedPrincipal, VerifiedIdentity
 from statistics_agent.contracts.common import AuthenticatedPrincipal
 from statistics_agent.contracts.conversations import (
     ConversationRunV2,
@@ -15,7 +17,7 @@ from statistics_agent.contracts.conversations import (
 )
 from statistics_agent.contracts.events import EventEnvelope, EventType
 from statistics_agent.persistence.completions import _verified, write_terminal
-from statistics_agent.persistence.conversations import _admission
+from statistics_agent.persistence.conversations import RunAdmissionGrant, _admission
 from statistics_agent.persistence.models import (
     ConversationRecord,
     DatasetArtifact,
@@ -45,18 +47,37 @@ class JobClaim:
     auth_session_ref: UUID | None
     owner: AuthenticatedPrincipal
     deadline: datetime
+    claimed_at: datetime
+    granted_actor: VerifiedIdentity | None = None
+
+
+def _grant_actor(job):
+    try:
+        if type(job.admission_grant.get("schema_version")) is int:
+            return RunAdmissionGrant.model_validate(job.admission_grant).actor
+    except ValidationError:
+        pass
+    raise LeaseLost
+
+
+def require_job_actor(job, principal):
+    if job.admission_grant is not None:
+        if principal != _grant_actor(job):
+            raise LeaseLost
+    elif not isinstance(principal, AuthorizedPrincipal) or (
+        principal.auth_session_ref != job.auth_session_ref
+    ):
+        raise LeaseLost
 
 
 async def require_lease(session, run_id, claim_id, *, expired=False):
     job = await session.get(RunJob, run_id, with_for_update=True)
     now = await session.scalar(select(func.clock_timestamp()))
-    if (
-        claim_id is None
-        or job is None
-        or job.claim_id != claim_id
-        or job.lease_expires_at is None
-        or ((job.lease_expires_at > now) if expired else (job.lease_expires_at <= now))
-    ):
+    if claim_id is None or job is None or job.claim_id != claim_id or job.lease_expires_at is None:
+        raise LeaseLost
+    deadline = job.execution_expires_at
+    lease_expired = job.lease_expires_at <= now or (deadline is not None and deadline <= now)
+    if lease_expired != expired:
         raise LeaseLost
     return job, now
 
@@ -105,7 +126,7 @@ class JobStore:
             )
             .with_for_update(of=RunRecord)
         )
-        return conversation, row
+        return None if row is None else (conversation, row)
 
     async def claim(self):
         async with self.database.session() as session:
@@ -128,11 +149,34 @@ class JobStore:
                 return None
             conversation, row = selected
             job = await session.get(RunJob, row.id, with_for_update=True)
+            now = await session.scalar(select(func.clock_timestamp()))
+            if job.queue_expires_at is not None and job.queue_expires_at <= now:
+                await self._finish_unstarted(
+                    session, conversation, row, now, "The analysis expired before it could start."
+                )
+                return None
+            owner = AuthenticatedPrincipal(issuer=conversation.issuer, subject=conversation.subject)
+            granted_actor = None
+            if job.admission_grant is not None:
+                try:
+                    granted_actor = _grant_actor(job)
+                    if (granted_actor.issuer, granted_actor.subject) != (
+                        owner.issuer,
+                        owner.subject,
+                    ):
+                        raise LeaseLost
+                except LeaseLost:
+                    await self._finish_unstarted(
+                        session, conversation, row, now, "The analysis could not be authorized."
+                    )
+                    return None
             attempt_id, request_id = uuid4(), uuid4()
             admitted = _admission(row)
             row.lifecycle, row.started_at = "running", max(now, row.created_at)
             job.claim_id = attempt_id
-            job.lease_expires_at = now + timedelta(seconds=self.lease_seconds)
+            deadline = now + timedelta(seconds=admitted.configuration.profile.run_timeout_seconds)
+            job.execution_expires_at = deadline
+            job.lease_expires_at = min(now + timedelta(seconds=self.lease_seconds), deadline)
             session.add(
                 RunAttemptRecord(
                     id=attempt_id,
@@ -152,15 +196,17 @@ class JobStore:
                 attempt_id,
                 request_id,
                 job.auth_session_ref,
-                AuthenticatedPrincipal(issuer=conversation.issuer, subject=conversation.subject),
-                datetime.now(UTC)
-                + timedelta(seconds=admitted.configuration.profile.run_timeout_seconds),
+                owner,
+                deadline,
+                now,
+                granted_actor,
             )
 
     async def heartbeat(self, claim):
         async with self.database.session() as session:
             job, now = await require_lease(session, claim.run_id, claim.attempt_id)
-            job.lease_expires_at = now + timedelta(seconds=self.lease_seconds)
+            renewed = now + timedelta(seconds=self.lease_seconds)
+            job.lease_expires_at = min(renewed, job.execution_expires_at or renewed)
             await session.commit()
 
     async def before_model(self, claim, request):
@@ -233,7 +279,6 @@ class JobStore:
             context.run_id != claim.run_id
             or context.session_id != claim.attempt_id
             or context.request_id != claim.request_id
-            or context.principal.auth_session_ref != claim.auth_session_ref
         ):
             raise LeaseLost
         async with self.database.session() as session:
@@ -246,7 +291,8 @@ class JobStore:
                 .with_for_update(of=ConversationRecord)
             )
             row = await session.get(RunRecord, claim.run_id, with_for_update=True)
-            await require_lease(session, claim.run_id, claim.attempt_id)
+            job, _ = await require_lease(session, claim.run_id, claim.attempt_id)
+            require_job_actor(job, context.principal)
             if (
                 context.principal.issuer != conversation.issuer
                 or context.principal.subject != conversation.subject
@@ -346,10 +392,38 @@ class JobStore:
             await write_terminal(session, row, conversation, view)
             await session.commit()
 
+    @staticmethod
+    async def _finish_unstarted(session, conversation, row, now, explanation):
+        run = _admission(row).run
+        view = ConversationRunV2(
+            **run.model_dump(exclude={"schema_version", "lifecycle", "outcome", "finished_at"}),
+            lifecycle="finished",
+            outcome="incomplete",
+            finished_at=max(now, row.created_at),
+            completion=RunCompletion(
+                answer=StatisticsAnswer(status="incomplete", explanation=explanation)
+            ),
+        )
+        await write_terminal(session, row, conversation, view)
+        await session.commit()
+
     async def recover_one(self):
         async with self.database.session() as session:
             now = await session.scalar(select(func.clock_timestamp()))
-            selected = await self._candidate(session, RunJob.lease_expires_at <= now)
+            queued = await self._candidate(
+                session,
+                (RunRecord.lifecycle == "queued")
+                & RunJob.claim_id.is_(None)
+                & (RunJob.queue_expires_at <= now),
+            )
+            if queued is not None:
+                await self._finish_unstarted(
+                    session, *queued, now, "The analysis expired before it could start."
+                )
+                return True
+            selected = await self._candidate(
+                session, or_(RunJob.lease_expires_at <= now, RunJob.execution_expires_at <= now)
+            )
             if selected is None:
                 return False
             conversation, row = selected
@@ -361,6 +435,7 @@ class JobStore:
                 attempt.request_id,
                 job.auth_session_ref,
                 AuthenticatedPrincipal(issuer=conversation.issuer, subject=conversation.subject),
+                now,
                 now,
             )
         # Reacquire and recheck expiry: heartbeat/recovery may have won since selection.

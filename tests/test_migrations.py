@@ -21,7 +21,7 @@ from statistics_agent.persistence.schema import (
 from support.database import apply, run, sandbox, status
 
 BASELINE = "0001_agent_baseline"
-HEAD = "0011_run_admission_grants"
+HEAD = "0012_worker_execution_deadline"
 
 
 def test_single_packaged_head_needs_no_settings_or_network(monkeypatch):
@@ -227,7 +227,7 @@ def test_failed_upgrade_rolls_back_ddl_and_preserves_previous_revision(
         """
 from alembic import op
 revision = "0002_failure"
-down_revision = "0011_run_admission_grants"
+down_revision = "0012_worker_execution_deadline"
 branch_labels = depends_on = None
 def upgrade():
     op.execute("CREATE TABLE rollback_probe (id integer)")
