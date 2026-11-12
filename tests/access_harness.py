@@ -25,7 +25,7 @@ PASSWORD = "Synthetic-Test-Password!29"
 
 
 class ApiProcess:
-    def __init__(self, settings, directory, *, issuer=ISSUER):
+    def __init__(self, settings, directory, *, issuer=ISSUER, frontend_origin=None):
         self.directory = directory
         self.issuer = issuer
         self.keys = {"first": Fernet.generate_key().decode()}
@@ -40,6 +40,7 @@ class ApiProcess:
                 self.environment.pop(str(field.validation_alias), None)
         self.environment.update(
             APP_ENV="test",
+            AUTH_HTTP_MODE="legacy",
             DATABASE_URL=settings.database_url.get_secret_value(),
             OIDC_ISSUER=issuer,
             AUTH_PUBLIC_ORIGIN=ORIGIN,
@@ -48,6 +49,13 @@ class ApiProcess:
             AUTH_HTTP_READ_SECONDS="15",
             AUTH_HTTP_DEADLINE_SECONDS="30",
         )
+        if frontend_origin is not None:
+            self.environment.update(
+                AUTH_HTTP_MODE="bearer",
+                AUTH_CORS_ORIGINS=json.dumps([frontend_origin]),
+                OIDC_AUDIENCE="agent-api",
+                OIDC_AUTHORIZED_PARTIES='["agent-web"]',
+            )
         self.process = None
 
     def write_keys(self, active, keys):

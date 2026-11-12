@@ -6,6 +6,11 @@ from statistics_agent.core.settings import load_settings
 from support.crypto import keyring
 
 
+def create_legacy_app(settings=None, **kwargs):
+    settings = settings if settings is not None else load_settings()
+    return application_factory(settings.model_copy(update={"http_auth_mode": "legacy"}), **kwargs)
+
+
 def create_app(settings=None, **kwargs):
     settings = settings if settings is not None else load_settings()
     secure = settings.app_env in {"staging", "production"}
@@ -18,4 +23,4 @@ def create_app(settings=None, **kwargs):
         client_secret_file="unused-client",
         encryption_keys_file="unused-ring",
     )
-    return application_factory(settings, auth_settings=auth, auth_secrets=keyring(), **kwargs)
+    return create_legacy_app(settings, auth_settings=auth, auth_secrets=keyring(), **kwargs)

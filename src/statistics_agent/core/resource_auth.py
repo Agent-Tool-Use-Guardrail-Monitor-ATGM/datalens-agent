@@ -44,6 +44,9 @@ class ResourceAuthSettings(BaseSettings):
         max_length=8,
         validation_alias="OIDC_AUTHORIZED_PARTIES",
     )
+    cors_origins: tuple[str, ...] = Field(
+        default=(), max_length=16, validation_alias="AUTH_CORS_ORIGINS"
+    )
     connect_timeout: float = Field(
         default=3, ge=0.1, le=10, allow_inf_nan=False, validation_alias="AUTH_HTTP_CONNECT_SECONDS"
     )
@@ -74,6 +77,16 @@ class ResourceAuthSettings(BaseSettings):
             raise ValueError("HTTP is restricted to local development/test issuers")
         if len(set(self.authorized_parties)) != len(self.authorized_parties):
             raise ValueError("Authorized parties must be unique")
+        if len(set(self.cors_origins)) != len(self.cors_origins):
+            raise ValueError("CORS origins must be unique")
+        for origin in self.cors_origins:
+            canonical_url(origin, origin=True)
+            parsed_origin = urlsplit(origin)
+            if parsed_origin.scheme == "http" and (
+                self.app_env not in {"development", "test"}
+                or parsed_origin.hostname not in {"localhost", "127.0.0.1", "::1"}
+            ):
+                raise ValueError("HTTP CORS origins are restricted to local development and tests")
         if self.request_timeout < max(self.connect_timeout, self.read_timeout, self.pool_timeout):
             raise ValueError("HTTP deadline must cover individual phase limits")
         return self

@@ -16,8 +16,8 @@ from fastapi import Depends
 from pydantic import SecretStr
 from sqlalchemy import event, text
 
+from app_support import create_legacy_app as create_app
 from statistics_agent.api.access import require_admin, require_user
-from statistics_agent.app import create_app
 from statistics_agent.contracts.auth import AuthorizedPrincipal
 from statistics_agent.contracts.common import AuthenticatedPrincipal
 from statistics_agent.contracts.sessions import ConsumedLogin, Credentials

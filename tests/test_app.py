@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from starlette.responses import StreamingResponse
 
 from app_support import create_app
+from statistics_agent.app import create_app as bearer_app
 from statistics_agent.core.logging import request_id_context
 from statistics_agent.core.settings import ConfigurationError, Settings
 
@@ -79,7 +80,7 @@ def test_factory_and_lifecycle_do_not_connect_and_use_one_settings_object(settin
         with monkeypatch.context() as isolated:
             isolated.setattr(socket, "create_connection", deny)
             isolated.setattr(socket.socket, "connect", deny)
-            app = create_app(settings, log_stream=output)
+            app = bearer_app(settings, log_stream=output)
             assert app.state.settings is settings
             assert not app.state.started
             async with app.router.lifespan_context(app):

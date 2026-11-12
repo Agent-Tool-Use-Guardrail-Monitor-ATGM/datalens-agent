@@ -261,6 +261,37 @@ expiry, logout semantics, audience/authorized-party separation, user isolation,
 dependency outages, concurrent jobs and missing/stale profile data. Publish an
 explicit compatibility/cutover runbook and rollback bounds.
 
+#### HTTP contract and rollout
+
+`AUTH_HTTP_MODE=bearer` is the default. The API reads the realm issuer,
+`agent-api` audience, `agent-web` authorized party and exact origins from
+[the resource auth settings](../.env.resource-auth.example). Set
+`AUTH_CORS_ORIGINS` to a JSON array of deployed frontend origins. An empty
+array disables cross-origin reads. The current route accepts GET with
+`Authorization` and optional `X-Request-ID`. Browser requests omit credentials
+and may read `WWW-Authenticate` and `X-Request-ID` on responses.
+
+`GET /auth/me` returns `issuer`, `subject`, `roles`, `email_verified`,
+`profile_status` and `profile`. The profile contains the projected display
+name, username, email and update time for that exact issuer and subject.
+`synchronizing` means the event-owned profile is pending and `profile` is null.
+The browser handles a `401 login_required` with one safe refresh/retry. A `403
+access_denied` indicates missing access. A `503 identity_unavailable` indicates
+temporarily unavailable signing keys or identity projection storage. The API
+never refreshes tokens and exposes the Bearer scheme in development OpenAPI.
+
+Before switching traffic, apply the current agent migration, run grant-aware
+workers, configure the Keycloak public client and exact frontend redirects,
+and reconcile identity backfill and consumer delivery. Switch API and frontend
+traffic together and verify PKCE, refresh, logout and projection lag. The old
+login, callback and logout routes are available only in rollback mode.
+
+For rollback, switch the API to `AUTH_HTTP_MODE=legacy` and restore the matching
+cookie frontend together. This requires the old Keycloak client, encryption
+keys and legacy tables. Keep the current database schema and grant-aware
+workers during this application-level rollback. Bearer tokens and cookie
+sessions are separate sign-ins. Retiring legacy storage is step 3.8.8.
+
 ### 3.8.8: Verify and retire legacy session/token storage
 
 Only after cutover proof and a separately requested contraction step, remove old

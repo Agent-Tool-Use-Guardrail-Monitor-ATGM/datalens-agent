@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     service_name: Literal["agent-api", "agent-worker", "agent-publisher"] = Field(
         default="agent-api", validation_alias="SERVICE_NAME"
     )
+    http_auth_mode: Literal["bearer", "legacy"] = Field(
+        default="bearer", validation_alias="AUTH_HTTP_MODE"
+    )
     service_version: str = Field(
         default="0.1.0",
         validation_alias="SERVICE_VERSION",

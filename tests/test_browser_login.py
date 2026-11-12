@@ -14,7 +14,7 @@ from playwright.sync_api import sync_playwright
 from pydantic import SecretStr
 from sqlalchemy import delete
 
-from statistics_agent.app import create_app
+from app_support import create_legacy_app as create_app
 from statistics_agent.core.auth import AuthSettings
 from statistics_agent.core.token_encryption import TokenEncryption
 from statistics_agent.persistence.auth import AuthStore

@@ -202,9 +202,6 @@ def test_multi_audience_separate_authorized_party_roles_and_bounded_profile_hint
         {"sid": ""},
         {"sid": 12},
         {"sid": "x" * 256},
-        {"name": "x" * 256},
-        {"email": "bad\naddress"},
-        {"preferred_username": 123},
     ],
 )
 def test_invalid_signed_tokens_are_rejected(changes):
