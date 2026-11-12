@@ -1,5 +1,16 @@
 # DataLens statistics-agent development
 
+## Plan 7.8 backend acceptance
+
+The HTTP verification covers CSV upload, clarification and follow-up in one
+conversation, separate statistics across two datasets, owner-only results,
+partial results, and persisted telemetry. The outbox suite also verifies
+recovery from simulated Kafka failures and stable replay IDs.
+[Acceptance commands and schema versions](docs/workspace-api.md#backend-acceptance)
+
+Full local regression passed 1,165 tests, including Chromium, Keycloak,
+Mailpit and RabbitMQ. Required PR CI remains pending.
+
 ## Plan 7.7 workspace API
 
 Bearer mode exposes owned CSV upload and preview, conversations and attachments,

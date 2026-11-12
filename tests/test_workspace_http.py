@@ -7,9 +7,12 @@ from uuid import uuid4
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from statistics_agent.app import create_app
 from statistics_agent.contracts.datasets import MAX_UPLOAD_BYTES
+from statistics_agent.contracts.events import EventEnvelope
+from statistics_agent.contracts.run_events import validate_run_event
 from statistics_agent.core.event_loop import create_event_loop
 from statistics_agent.core.model_settings import load_model_settings
 from statistics_agent.core.resource_auth import ResourceAuthSettings
@@ -17,6 +20,7 @@ from statistics_agent.datasets.execution import DatasetParser
 from statistics_agent.persistence.datasets import DatasetStore
 from statistics_agent.persistence.jobs import JobStore
 from statistics_agent.persistence.migrate import execute
+from statistics_agent.persistence.models import EventOutbox
 from statistics_agent.worker import AgentWorker
 from support.auth import SyntheticProvider
 from support.database import run
@@ -107,6 +111,13 @@ def test_admission_retry_history_clarification_and_results(workspace):
     )
     assert upload.status_code == 201, upload.text
     dataset_id = upload.json()["dataset_id"]
+    second_upload = client.post(
+        "/v1/datasets?filename=other-sales.csv",
+        headers=owner | {"Content-Type": "text/csv"},
+        content=b"price\n10\n20\n30\n",
+    )
+    assert second_upload.status_code == 201, second_upload.text
+    second_id = second_upload.json()["dataset_id"]
     created = client.post("/v1/conversations", headers=owner, json={"title": "Sales"})
     assert created.status_code == 201, created.text
     url = "/v1/conversations/" + created.json()["conversation_id"]
@@ -135,7 +146,7 @@ def test_admission_retry_history_clarification_and_results(workspace):
         )
         assert (
             client.put(
-                url + "/attachments", headers=owner, json={"dataset_ids": [dataset_id]}
+                url + "/attachments", headers=owner, json={"dataset_ids": [dataset_id, second_id]}
             ).status_code
             == 200
         )
@@ -151,8 +162,8 @@ def test_admission_retry_history_clarification_and_results(workspace):
         assert (conflict.status_code, conflict.json()["code"]) == (409, "idempotency_conflict")
         followup = {
             "idempotency_key": str(uuid4()),
-            "question": "Price mean.",
-            "selection": {"dataset_ids": [dataset_id]},
+            "question": "Price mean for each dataset separately.",
+            "selection": {"dataset_ids": [dataset_id, second_id]},
         }
         busy = client.post(runs, headers=owner, json=followup)
         assert (busy.status_code, busy.json()["code"]) == (409, "conversation_busy")
@@ -175,7 +186,34 @@ def test_admission_retry_history_clarification_and_results(workspace):
 
         queued = client.post(runs, headers=owner, json=followup)
         assert queued.status_code == 202, queued.text
-        client.portal.call(execute_one, lambda request: answer(json.loads(request.content)))
+
+        def compare(request):
+            body = json.loads(request.content)
+            context = json.loads(body["messages"][1]["content"])
+            assert [item["dataset_id"] for item in context["datasets"]] == [dataset_id, second_id]
+            assert "Which column?" in [item["content"] for item in context["unverified_history"]]
+            observations = [item for item in body["messages"] if item["role"] == "tool"]
+            if len(observations) < 2:
+                return call(
+                    "describe_columns",
+                    {
+                        "dataset_id": context["datasets"][len(observations)]["dataset_id"],
+                        "columns": ["price"],
+                        "missing_policy": "omit",
+                    },
+                )
+            return call(
+                "finalize_statistics",
+                {
+                    "status": "completed",
+                    "explanation": "The separate price means are 4 and 20.",
+                    "result_ids": [
+                        json.loads(item["content"])["tool_call_id"] for item in observations
+                    ],
+                },
+            )
+
+        client.portal.call(execute_one, compare)
         run_url = "/v1/runs/" + queued.json()["run_id"]
         result = client.get(run_url, headers=owner).json()
         assert result["outcome"] == "completed", result
@@ -183,6 +221,38 @@ def test_admission_retry_history_clarification_and_results(workspace):
         assert client.get(result_url, headers=foreign).status_code == 404
         artifact = client.get(result_url, headers=owner).json()
         assert artifact["payload"]["result"]["columns"][0]["metrics"]["mean"] == 4
+        second_result = client.get(
+            run_url + "/results/" + result["results"][1]["tool_call_id"], headers=owner
+        ).json()
+        assert second_result["provenance"]["dataset"]["dataset_id"] == second_id
+        assert second_result["payload"]["result"]["columns"][0]["metrics"]["mean"] == 20
+
+        async def read_outbox():
+            async with app.state.database.session() as session:
+                query = (
+                    select(EventOutbox)
+                    .where(EventOutbox.envelope["run_id"].as_string() == queued.json()["run_id"])
+                    .order_by(EventOutbox.sequence)
+                )
+                records = (await session.scalars(query)).all()
+                assert all(row.published_at is None for row in records)
+                return [
+                    validate_run_event(EventEnvelope.model_validate(row.envelope))
+                    for row in records
+                ]
+
+        events = client.portal.call(read_outbox)
+        assert [event.sequence for event in events] == list(range(1, len(events) + 1))
+        assert events[0].event_type.value == "session.started"
+        assert events[0].data["dataset_count"] == 2
+        assert events[-1].event_type.value == "session.ended"
+        allowed = [
+            event
+            for event in events
+            if event.data.get("policy_evaluation", {}).get("status") == "allowed"
+        ]
+        assert len(allowed) == 2
+        assert "Price mean" not in json.dumps([event.data for event in events])
 
         def interrupted(request):
             body = json.loads(request.content)
@@ -201,7 +271,8 @@ def test_admission_retry_history_clarification_and_results(workspace):
         assert client.get(partial_result, headers=owner).status_code == 200
 
         assert client.delete("/v1/datasets/" + dataset_id, headers=owner).status_code == 204
-        assert client.get(url + "/attachments", headers=owner).json() == []
+        remaining = client.get(url + "/attachments", headers=owner).json()
+        assert [item["dataset_id"] for item in remaining] == [second_id]
         assert client.get(result_url, headers=owner).status_code == 404
         assert client.get(run_url, headers=owner).json()["outcome"] == "completed"
         app.state.admission_configuration = None
@@ -213,3 +284,4 @@ def test_admission_retry_history_clarification_and_results(workspace):
     finally:
         client.delete(url, headers=owner)
         client.delete("/v1/datasets/" + dataset_id, headers=owner)
+        client.delete("/v1/datasets/" + second_id, headers=owner)
