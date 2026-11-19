@@ -663,84 +663,29 @@ route was introduced. Implementation branch: `feature/alembic-baseline`.
 Sources: [Alembic async/connection sharing](https://alembic.sqlalchemy.org/en/latest/cookbook.html#using-asyncio-with-alembic),
 [revision inspection](https://alembic.sqlalchemy.org/en/latest/api/runtime.html#alembic.runtime.migration.MigrationContext.get_current_heads).
 
-## Liveness and readiness вЂ” step 1.9
+## Foundation verification — step 1.10
 
-- `GET /health/live` returns 200 with `{"status":"alive"}` when the process can
-  serve HTTP. It never accesses PostgreSQL, Keycloak, Kafka or an LLM.
-- `GET /health/ready` returns 200 with `{"status":"ready"}` only after lifespan
-  started, a database connection/SELECT 1 succeeds, and the recorded Alembic heads
-  exactly match this release's packaged heads. Otherwise it returns a safe 503
-  error envelope with code `not_ready`, message `Service not ready`, request ID
-  and empty details. Missing migrations are not applied by the probe.
+The [fresh-environment verification record](docs/foundation-verification.md)
+documents setup, disposable PostgreSQL, explicit migrations, real API startup,
+cleanup, resolved versions and platform limits. The candidate including pending
+step 1.9 passes all 150 tests, Ruff and dependency checks in a new Python 3.12
+environment. This documentation branch does not include the pending health code;
+follow its startup/health instructions after that PR is merged. Final sign-off
+requires both PR delivery and passing CI on the integrated revision.
 
-Both endpoints are available without login in all environments, return
-`Cache-Control: no-store` and preserve X-Request-ID correlation. Development
-OpenAPI lists these foundation routes and the readiness 503 error model;
-staging/production still disable API documentation. No credentials, addresses,
-revision strings or driver failures appear in the health responses.
-
-The readiness work uses DB_HEALTH_TIMEOUT_SECONDS for pool acquisition, SQL and
-schema inspection. Connection context managers cancel/rollback/close the probe
-operation on failure/timeout. External task cancellation is not converted into
-an authorization or database result. Each probe checks current state rather than
-using cached positive readiness, so repair can restore readiness without an app
-restart. Successful GET health requests are excluded from normal request logs;
-unhealthy probes still emit safe status/correlation metadata. Requests to other
-paths and invalid methods retain normal logging.
-
-Kubernetes should use liveness for process restart decisions and readiness for
-traffic eligibility. A database outage must not trigger liveness restart loops.
-These endpoint semantics follow [Kubernetes probes](https://kubernetes.io/docs/concepts/workloads/pods/probes/).
-Kubernetes manifests, deployment rollout policy and monitoring remain plan 10.
-
-From the service directory, start the API using the documented command, then:
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:8000/health/live
-Invoke-RestMethod http://127.0.0.1:8000/health/ready
-```
-
-Fresh local storage first needs the explicit migration upgrade from step 1.8.
-Read-only local smoke checks returned 200/alive and 200/ready during 1.9; no
-persistent data was changed. The full disposable-PostgreSQL suite passes 150
-tests, including 12 new health checks covering safe failures, timeout/cancellation,
-missing/wrong schema, no automatic migration, pool/query recovery, connection
-failure, development documentation and low-volume probe logging. Ruff lint/format
-and dependency consistency pass; one existing TestClient/HTTPX warning remains.
-No dependency, Docker image, cloud resource or additional CI job was introduced.
-
-## Naming update вЂ” 23 October 2026
-
-On `refactor/datalens-service-names`, all owned process/Compose service names
-use `datalens-`: API/worker, persistent database and disposable test database.
-The identity repository folder is now `services/datalens-identity/`.
-This does not rename upstream image repositories, database identifiers or the
-Python package, and it does not add business functionality.
-
-The volume keeps its existing Compose ownership key; its explicit physical name
-is `datalens-agent-local_agent-postgres-data`, preserving existing local data and
-ownership labels. Rendering was checked without changing the persistent database. An already
-running old-name container is left untouched; after merging, stop the local API
-and use `docker compose --env-file .env.postgres down --remove-orphans` followed by
-`docker compose --env-file .env.postgres up -d --wait` when ready to switch it.
-Never add `--volumes`/`-v` to that operation.
-
-Before the rename, all 150 tests passed. Afterward, **154 tests pass**, including
-four cases proving canonical and legacy process inputs normalize correctly.
-Ruff lint/format pass; one existing TestClient/HTTPX warning remains. The tests
-used the renamed disposable PostgreSQL service; persistent data was not changed.
-No implementation commit, push or PR was performed; required GitHub CI is pending.
+Vector storage is deferred: PostgreSQL remains the existing official image;
+no pgvector migration, chat tables or embedding generation is introduced.
 
 ## Development status
 
-Steps 1.1вЂ“1.9 are merged into main; health PR #6 reached `58da046` with
-successful required tests. The naming branch has 154 passing tests; main's
-pre-rename suite had 150. Step 1.10 has local fresh-environment evidence, but its
-separate verification document is absent from fetched main; documentation
-delivery/final sign-off remain pending. This naming PR does not publish it or
-implement the next identity step.
-Missing TEST_DATABASE_URL skips marked checks locally and fails them in CI;
-skipped database tests must not be reported as passed. From the service directory:
+Steps 1.1–1.8 are merged into main. The separate `feature/health-checks` working
+tree contains locally verified step 1.9 (150 tests), pending commit/PR/CI delivery.
+Step 1.10 has fresh-environment local evidence on `chore/foundation-signoff`, but
+final sign-off awaits the merged health implementation and integrated required CI.
+This checkout still contains the committed pre-health implementation (138 tests);
+it adds documentation only. Do not begin plan 2 until foundation delivery is
+complete. Without TEST_DATABASE_URL, marked PostgreSQL checks skip
+locally; these skips are not counted as passes and are forbidden in CI. From the service directory:
 
 ```powershell
 python -m ruff check .
@@ -814,9 +759,9 @@ PR #2 delivered the initial workflow and contracts with passing GitHub checks;
 step 1.6 is also merged into origin/main. The user confirmed prerequisite branch
 protection; effective remote rules were not independently audited. Keep `tests`
 required, require PRs and an up-to-date branch, and restrict direct-push/bypass
-permissions. Steps 1.7вЂ“1.9 are merged into fetched origin/main. The naming refactor requires
-its own PR and latest-revision tests; nothing was staged, committed, pushed or
-merged during this change.
+permissions. Steps 1.7 and 1.8 are merged into fetched origin/main. Steps 1.9 and
+1.10 still need PR/CI delivery; nothing was staged, committed, pushed or merged
+during this verification.
 
 Planning documents in the parent workspace are outside this Git repository and
 will not appear in its PR. Changes to them are reported separately until they
