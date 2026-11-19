@@ -22,7 +22,7 @@ class VerifiedAccess(Contract):
 
     @model_validator(mode="after")
     def consistent_identity(self):
-        if not 0 < self.expires_at - self.issued_at <= 300:
+        if not 0 < self.expires_at - self.issued_at <= 1800:
             raise ValueError("Invalid access-token lifetime")
         if (self.identity.issuer, self.identity.subject) != (
             self.profile_hints.issuer,
