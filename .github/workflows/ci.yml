@@ -12,10 +12,11 @@ permissions:
 jobs:
   tests:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # Cold dependency/browser/container downloads share the job's test budget.
+    timeout-minutes: 30
 
     services:
-      postgres:
+      agent-test-postgres:
         image: postgres:17.11-bookworm
         env:
           POSTGRES_DB: agent_test_db
@@ -31,6 +32,10 @@ jobs:
 
     env:
       TEST_DATABASE_URL: postgresql+psycopg://agent_test:test-only-password@127.0.0.1:5432/agent_test_db
+      AUTH_BROWSER_TESTS: "1"
+      OTEL_SDK_DISABLED: "true"
+      PYTHON_DOTENV_DISABLED: "1"
+      IDENTITY_MESSAGING_ROOT: .pytest_cache/messaging
 
     steps:
       - name: Check out repository
@@ -43,10 +48,27 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Check out RabbitMQ topology for consumer acceptance
+        uses: actions/checkout@v7
+        with:
+          repository: Agent-Tool-Use-Guardrail-Monitor-ATGM/datalens-messaging
+          ref: 25b2afabeff049834355c19add7061d557639120
+          path: .pytest_cache/messaging
+          persist-credentials: false
+
       - name: Install dependencies and package
         run: |
           python -m pip install -r requirements.txt
           python -m pip install --no-deps --editable .
 
+      - name: Prepare browser and disposable Keycloak
+        run: |
+          python -m playwright install --with-deps chromium
+          docker compose -p datalens-agent-auth-tests -f compose.auth.test.yaml up -d --wait --wait-timeout 240
+
       - name: Run tests
         run: python -m pytest -q
+
+      - name: Remove disposable identity fixture
+        if: always()
+        run: docker compose -p datalens-agent-auth-tests -f compose.auth.test.yaml down

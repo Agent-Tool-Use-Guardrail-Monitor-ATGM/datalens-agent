@@ -40,6 +40,24 @@ def test_minimum_settings_require_no_other_service_credentials(database_environm
         settings.log_level = "DEBUG"
 
 
+@pytest.mark.parametrize(
+    "supplied,canonical",
+    [
+        ("datalens-agent-api", "agent-api"),
+        ("datalens-agent-worker", "agent-worker"),
+        ("agent-api", "agent-api"),
+        ("agent-worker", "agent-worker"),
+    ],
+)
+def test_service_names_are_canonical_in_settings_and_serialization(
+    database_environment, monkeypatch, supplied, canonical
+):
+    monkeypatch.setenv("SERVICE_NAME", supplied)
+    settings = load_settings()
+    assert settings.service_name == canonical
+    assert settings.model_dump()["service_name"] == canonical
+
+
 def test_missing_database_url_fails_without_loading_local_dotenv():
     Path(".env").write_text(f"DATABASE_URL={DATABASE_URL}\n", encoding="utf-8")
     with pytest.raises(ConfigurationError, match="DATABASE_URL"):

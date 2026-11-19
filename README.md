@@ -1,5 +1,266 @@
 # DataLens statistics-agent development
 
+## Plan 7.8 backend acceptance
+
+The HTTP verification covers CSV upload, clarification and follow-up in one
+conversation, separate statistics across two datasets, owner-only results,
+partial results, and persisted telemetry. The outbox suite also verifies
+recovery from simulated Kafka failures and stable replay IDs.
+[Acceptance commands and schema versions](docs/workspace-api.md#backend-acceptance)
+
+Full local regression passed 1,165 tests, including Chromium, Keycloak,
+Mailpit and RabbitMQ. Required PR CI remains pending.
+
+## Plan 7.7 workspace API
+
+Bearer mode exposes owned CSV upload and preview, conversations and attachments,
+question submission, run polling and verified results. Run the API and worker
+against the same agent database and LLM profile. Use `/openapi.json` in development
+to generate frontend types. [Routes, limits and retry behavior](docs/workspace-api.md)
+
+Local regression passed 1,146 tests with disposable PostgreSQL. Browser and
+real RabbitMQ acceptance remain part of the required PR gate.
+
+**12 November 2026 - 3.8.7 Bearer HTTP and CORS cutover**
+
+The API defaults to Bearer authentication. `GET /auth/me` returns the caller's
+projected profile or a synchronizing state. Set exact frontend origins using
+`AUTH_CORS_ORIGINS`. Legacy cookie auth is available with `AUTH_HTTP_MODE=legacy`
+for coordinated rollback. [HTTP contract and rollout](docs/bearer-authentication-migration.md#http-contract-and-rollout).
+
+All 1,145 non-browser tests passed. Real Chromium/Keycloak verified public PKCE
+login, refresh, logout and browser CORS. A separate browser check verified
+legacy login in rollback mode. Required PR CI remains pending.
+
+**12 November 2026 - 3.8.6b Worker grant enforcement**
+
+Workers run granted jobs using the accepted actor and pinned scope. A queued
+grant expires after ten minutes. Migration `0012_worker_execution_deadline`
+persists the execution deadline so heartbeats and restarts cannot extend it.
+The non-browser suite passed 1,139 tests. Browser checks remain for PR CI.
+The HTTP cutover is step 3.8.7.
+[Worker grants and rollout](docs/bearer-authentication-migration.md#386-accepted-job-grants-independent-of-browser-sessions).
+
+**12 November 2026 - 3.8.6a Atomic run admission grants**
+
+Migration `0011_run_admission_grants` adds a versioned actor snapshot and a
+ten-minute queue deadline to newly admitted jobs. Admission writes both
+atomically with the run. Focused migration, admission and worker checks passed
+(69 tests). Worker enforcement follows in 3.8.6b.
+[Grant storage and rollback](docs/bearer-authentication-migration.md#386-accepted-job-grants-independent-of-browser-sessions).
+
+**11 November 2026 - 3.8.5.3a Local bearer revocation**
+
+`BearerAccess` checks the signed JWT and session ID, then reads revocation
+state from agent PostgreSQL. A revoked token requires a new login. A database
+failure or timeout returns `identity_unavailable`. The HTTP routes switch to
+this check in 3.8.7.
+
+Verified with 51 JWT and projection checks and 3 RabbitMQ consumer checks.
+The non-browser run passed 1,130 tests. One existing worker-heartbeat test
+timed out and passed on an isolated retry. Browser checks remain for PR CI.
+Next is **3.8.5.3b**, identity-owned existing-user backfill and replay
+verification. Retain agent receipts, tombstones and revocation metadata
+until a safe replay window and pruning policy are verified.
+
+**Previous milestone: 3.8.5.2 RabbitMQ identity consumer.** [PR #42](https://github.com/Agent-Tool-Use-Guardrail-Monitor-ATGM/datalens-agent/pull/42) merged at `2bdce96`.
+
+Implemented on `feat/identity-rabbitmq-consumer`. The consumer validates
+message metadata and acknowledges new deliveries and identical replays after
+PostgreSQL commits. Invalid messages go to the dead-letter queue. Transient
+database failures requeue after a delay, and broker disconnects trigger bounded
+reconnect backoff. The process logs delivery lag and backlog.
+
+Eight focused checks passed, including real RabbitMQ-to-PostgreSQL delivery.
+The non-browser suite passed **1,129 tests** for that step.
+See [consumer setup](docs/identity-events-and-connectivity-plan.md#rabbitmq-consumer).
+
+**Previous milestone: 3.8.5.1 durable identity projection.** [Projection PR #41](https://github.com/Agent-Tool-Use-Guardrail-Monitor-ATGM/datalens-agent/pull/41) passed the required CI check at `eb6a83c`.
+
+Migration `0010_identity_projection` adds event receipts, per-owner
+profile and account state, and indexed session revocations. Profile updates
+apply in source revision order. Token cutoffs only increase, and deletion
+prevents replay from restoring display data. The receipt and effect commit
+together. The local revocation read is available for a verified access token.
+
+Focused verification passed 39 checks, including PostgreSQL concurrency,
+rollback, serialization retry, migration preservation and schema parity.
+The non-browser suite passed **1,126 tests**. Seventeen browser tests
+remain for the required Linux PR gate.
+
+[Identity projection and rollout](docs/identity-events-and-connectivity-plan.md#durable-projection).
+
+**Broker ownership revision, 10 November 2026:** RabbitMQ infrastructure belongs
+to separate repository `datalens-messaging`. Identity owns source/outbox/publisher
+and schemas; this service owns its consumer/projection. The local messaging
+scaffold provisions no runtime yet. See [integration ownership](docs/identity-events-and-connectivity-plan.md).
+Only documentation changes on `fix/broker-repository-boundary`; agent code is unchanged.
+
+**Current, 9 November 2026:** 3.8.2 delivery is accepted from user confirmation.
+Step 3.8.3 adds public PKCE configuration in the separate `datalens-identity`
+repository, locally verified by 109 passing identity tests in 377.38 seconds.
+Required PR checks/delivery remain pending. This agent branch contains only
+updated migration plans; no agent runtime changes or HTTP cutover. Identity's
+`docs/frontend_pkce_handoff.md` defines setup and native Account Console behavior.
+Password sign-out from other devices is opt-in until mandatory source enforcement
+in 3.8.4. Stop before that step. Historical 3.8.2 evidence follows.
+
+CI timing correction for 3.8.2: the new verifier test created absolute expiry/
+not-before parameters at collection, while token issuance time was generated at
+execution. A six-minute CI delay could turn its intended 601-second token into
+a valid token with less than 300 seconds left. Test tokens now anchor relative
+time claims together at minting. Production JWT validation is unchanged.
+Verifier/legacy gate: **75 passed**; simulated 360-second and 660-second collection
+delays: **44 passed each**, without sleeping. Added 300/301-second boundary cases.
+Ruff/format/whitespace checks pass. Full browser/database gates were not rerun for
+this test-only correction; required GitHub `tests` must pass after the next push.
+This is separate from the older browser-login 503 flake recorded below.
+
+Latest requested step: **3.8.2 independent resource-server JWT verifier**, reusing
+`fix/bearer-authentication-migration` after the user's 3.8.1 merge/pull confirmation.
+[Verifier contract and usage](docs/resource-server-verifier.md). The secret-free
+`ResourceAuthSettings` separates `OIDC_AUDIENCE=agent-api` from allowed frontend
+authorized parties (`agent-web` by default). Verification returns immutable
+identity/time/session metadata and bounded display hints, never credentials.
+Hints do not overwrite future event-owned profile data. See
+[.env.resource-auth.example](.env.resource-auth.example) for explicit configuration.
+
+Shared JWT/JWKS logic now supports both this verifier and the current legacy
+OAuth client; cookie HTTP routes and workers have not switched. No database
+migration, new database lock, RabbitMQ consumer, CORS or public frontend client is
+added here. [Concurrency/deadlock recovery planning](docs/database-concurrency-and-recovery.md)
+extends future identity integration with source revisions, consistent lock order
+and bounded transaction-only retries; existing atomic profile upserts/leases and
+row/advisory locks remain. No generic lock/retry framework was introduced.
+
+3.8.2 is complete locally: **132 focused checks**, **1,119 backend tests** and
+**17 final browser tests** passed. Ruff/format/dependency/whitespace checks pass.
+First browser group had 16 passes and one success-login 503; its unchanged
+isolated rerun and final group passed with safe phase/timing diagnostics only.
+The earlier failure remains recorded, with no proven cause or timeout/assertion
+changes; it is an unresolved flake risk, not a claimed fix. Required remote PR
+`tests` and delivery remain pending. No commit/push. Stop before 3.8.3; Bearer HTTP
+cutover is not delivered. Full evidence is in the verifier document.
+
+Previous step: **3.8.1 minimal user-profile foundation**, delivered per user on
+`fix/bearer-authentication-migration` (renamed before push). The approved
+[bearer-authentication migration](docs/bearer-authentication-migration.md) changes
+the target architecture to frontend PKCE and request JWT validation. This first
+additive step introduces migration `0009_user_profiles`, display contracts and an
+internal profile store. It does not change HTTP authentication or worker behavior;
+existing login/session/token storage remains operational until later cutover.
+
+Profiles are keyed by exact issuer/subject, with nullable display name, username,
+email and a database update timestamp. They contain no passwords, roles, tokens
+or login status, and cannot grant access. There is no profile HTTP endpoint or
+automatic synchronization yet. Existing resource ownership and history are unchanged.
+Deploy through the existing migration gate; application rollback can leave the
+unused additive table in place. Test downgrade deletes profile rows only.
+
+3.8.1 verification: focused gate **55 passed**; full non-browser regression
+**1,077 passed, 17 browser tests deselected**, 514 warnings, 149.66 seconds.
+Ruff/format/dependency/whitespace checks pass. Browser tests were not rerun.
+Those are historical 3.8.1 results; its merge/pull is now accepted from the user.
+
+Step 7.6 delivery is accepted from the user pull confirmation. The existing
+pending-event limit decision remains open; cleanup scheduling is paused while
+the authentication boundary is migrated. No identity/frontend runtime change or
+cloud resource is included in this branch. Parent planning files are outside PR.
+
+Approved follow-up plans: [identity events and connectivity](docs/identity-events-and-connectivity-plan.md).
+RabbitMQ will carry registration/profile/security changes independently of Kafka
+telemetry. Profiles update through ordered events without an agent request;
+minimal separate revocation metadata rejects new requests after event consumption,
+with a 300-second JWT-expiry fallback. Accepted bounded jobs may finish after
+logout/password/account changes, retaining existing lease/data checks. Account
+actions use Keycloak Account Console; profile images are excluded. Exact frontend
+CORS and configurable public HTTPS/AMQPS endpoints are planned, not implemented.
+That prior documentation-only update did not rerun 3.8.1; current 3.8.2 verification
+is recorded separately above and in the verifier document.
+
+Previous step 7.6, originally prepared on `feature/kafka-event-outbox`:
+[Kafka telemetry delivery](docs/kafka-telemetry.md). Kafka is team-owned; this
+repository provisions no broker or topic. Pending events stay in PostgreSQL
+until the publisher can deliver them to `agent.events.v1`. Mocked delivery tests
+replace the removed broker fixture and CI provisioning. Backlog-capacity behavior
+still needs agreement before operational sign-off.
+
+Published-event retention: `python -m statistics_agent.cleanup --env-file .env`
+removes at most 1,000 outbox rows published more than 7 days ago. Pending events
+and execution history are preserved. The command is ready for an external hourly
+schedule; no scheduler or cloud resource is provisioned here. See the telemetry
+document for retention/limit options and verification.
+
+CI timeout follow-up (6 November 2026): the required `tests` job allows 30 minutes
+for setup plus testing. Run 42200427469 spent 12m47s on setup and was cancelled
+after only 2m26s of pytest under the previous 15-minute job limit. Test coverage,
+commands, required-check name and branch protection are unchanged.
+
+Previous step: [7.5 PostgreSQL worker and recovery](docs/durable-worker.md),
+complete locally on `feature/durable-worker-recovery`; final backend/browser
+gates pass, required PR tests/delivery remain pending. Step 7.4 is delivered per user pull
+confirmation. The independent process has bounded claims/heartbeats, original
+session authorization, pre-dispatch evidence, verified result checkpoints and
+fenced terminal writes. Interrupted calls are not automatically replayed.
+Migration 0007 is required through the deployment gate after merge. No Kafka
+publisher, business HTTP endpoint or cloud deployment is included.
+
+Focused worker/CLI gate: 26 passed; three final execution-binding cases passed
+separately. Final current-code backend gate: **1,010 passed, 17 browser tests
+deselected**, 481 warnings, 116.48 seconds. Ruff/format/pip/whitespace checks pass.
+An initial combined gate had 1,022 passes and two existing synthetic-browser-login
+failures (552.46 seconds); both failed cases passed unchanged under safe
+stage/status diagnostics (2 passed, 50.54 seconds). No cause was proven, and no
+authentication rules, assertions, timeouts or retries were changed. Final browser
+group: **17 passed, 1,010 deselected**, 377.63 seconds, with safe temporary login
+stage/status instrumentation only. The final sequential groups cover all 1,027
+current tests; the initial combined run remains recorded as a failure. Treat the
+unreproduced login failures as an unresolved flake risk for required remote CI.
+Added 29 worker/CLI/binding cases overall; no browser test source was changed.
+
+Run/setup/recovery details: [durable worker](docs/durable-worker.md). No commit/push;
+required remote PR tests remain pending. Stop before 7.6.
+
+Previous step: [7.4 clarification and partial results](docs/clarification-and-partial-results.md),
+delivered per user pull confirmation. Step 7.3 is delivered per user pull confirmation. The runner
+ends clarification as needs_input; a reply becomes a new run. Verified partial
+results survive failed explanation. Terminal transactions store assistant history,
+release the busy guard and distinguish original historical citations from new
+computations through conversation-run-v2. That step added no HTTP route or worker;
+current worker behavior is documented above.
+
+Migration `0006_run_completion` must pass the existing migration/readiness gate
+after merge. New model-profile-v4 explicitly raises the request reservation from
+4,096 to 6,144 for the full six-function registry; total run input stays 32,768.
+Stored v3 profiles remain readable with their original limits.
+
+Full regression gate: **995 passed, no skips**, including 17 browser tests,
+415 upstream warnings, 386.63 seconds. Final focused writer/control/contract gate:
+**74 passed**, including three additional cases and the final lock/validation
+adjustments. Ruff/format/pip/whitespace checks pass. Final current-code non-browser gate: **981 passed, 17 browser tests deselected**,
+424 warnings, 71.63 seconds. Added 35 cases overall. No live provider/cloud calls, dependencies,
+commit or push. Required remote PR tests remain pending.
+
+Step 7.4 delivery is accepted. Current step 7.5 is recorded above; stop before
+7.6 Kafka/outbox publication until separately requested.
+
+Previous step: [6.4 controlled runner integration](docs/controlled-runner-integration.md),
+delivered per user pull confirmation. Step 6.3 is also delivered.
+The internal factory composes real owned policy, admitted limits and four numerical
+tools. Numerical outcomes include redacted policy-version/verdict evidence;
+finalization retains separate access/result checks. Native CrewAI execution stays
+disabled. Verification: 847 passed, 17 browser tests deselected; Ruff/format/pip/
+whitespace checks passed for that step. Plan 7.1 status is recorded above.
+
+[Plan 3 integration evidence and frontend/agent handoff](docs/access-handoff.md)
+records the verified access contract and recovery/test procedures.
+
+Current startup requires auth settings and protected client-secret/encryption-key
+files, in addition to DATABASE_URL. See [browser login setup](docs/browser-login.md)
+before running the API. Missing configuration fails startup; there is no bypass.
+Current request/session API: [local authorization and ownership](docs/request-authorization.md),
+[automatic refresh/logout and required migration](docs/session-refresh-logout.md).
+
 ## Environment and setup
 
 Each Python service has its own standard virtual environment in its `.venv/`
@@ -62,7 +323,7 @@ The future API and worker share this service environment; a separate Python
 microservice would have its own `.venv/` and requirements file. Keycloak and the
 frontend keep their own toolchains.
 
-## Configuration — step 1.3
+## Configuration вЂ” step 1.3
 
 Use `statistics_agent.core.settings.load_settings()` to load process environment
 variables and defaults. It performs no network/database operations. Local dotenv
@@ -84,16 +345,22 @@ Kafka credentials are needed for foundation configuration.
 
 | Variable | Default | Accepted value / unit |
 |---|---|---|
-| `DATABASE_URL` | Required | `postgresql+psycopg://...` with host, username and database; 1–4096 characters |
+| `DATABASE_URL` | Required | `postgresql+psycopg://...` with host, username and database; 1вЂ“4096 characters |
 | `APP_ENV` | `development` | `development`, `test`, `staging`, `production` |
 | `SERVICE_NAME` | `agent-api` | `agent-api` or future `agent-worker` process role |
-| `SERVICE_VERSION` | `0.1.0` | 1–64 characters, starting with a digit; version-safe letters/numbers and `.+_-` |
+| `SERVICE_VERSION` | `0.1.0` | 1вЂ“64 characters, starting with a digit; version-safe letters/numbers and `.+_-` |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
-| `DB_POOL_SIZE` | `5` | 1–20 connections |
-| `DB_CONNECT_TIMEOUT_SECONDS` | `5` | 1–60 seconds |
-| `DB_POOL_TIMEOUT_SECONDS` | `10` | 0.1–60 seconds |
-| `DB_STATEMENT_TIMEOUT_MS` | `10000` | 100–300000 milliseconds |
-| `DB_HEALTH_TIMEOUT_SECONDS` | `2` | 0.05–10 seconds; strictly below connect, pool and statement timeouts |
+| `DB_POOL_SIZE` | `5` | 1вЂ“20 connections |
+| `DB_CONNECT_TIMEOUT_SECONDS` | `5` | 1вЂ“60 seconds |
+| `DB_POOL_TIMEOUT_SECONDS` | `10` | 0.1вЂ“60 seconds |
+| `DB_STATEMENT_TIMEOUT_MS` | `10000` | 100вЂ“300000 milliseconds |
+| `DB_HEALTH_TIMEOUT_SECONDS` | `2` | 0.05вЂ“10 seconds; strictly below connect, pool and statement timeouts |
+
+Process names are `agent-api` and `agent-worker`, independent of the repository name. Legacy prefixed SERVICE_NAME values
+`datalens-agent-api` and `datalens-agent-worker` remain accepted as input aliases and normalize to
+`agent-api` and `agent-worker` in settings, serialization and
+logs. New configuration must use the canonical values above. Python imports
+remain `statistics_agent`; database identifiers remain `agent_db`/`agent_test_db`.
 
 Settings are immutable. The database URL is secret-bearing and excluded from
 settings repr/dumps/JSON. `load_settings` raises `ConfigurationError` with safe
@@ -106,7 +373,7 @@ The application factory now loads and shares one settings object per app.
 Lifespan now creates/disposes the agent database pool; connections are lazy.
 Step 1.7 enforces pool/connect/statement limits when database work is performed.
 
-## Shared contracts — step 1.4
+## Shared contracts вЂ” step 1.4
 
 `statistics_agent.contracts` provides immutable principal/auth-session,
 configuration and artifact references; HTTP error envelopes and request-ID
@@ -144,7 +411,7 @@ serialization compatibility, not a complete execution trace. Unknown usage
 remains `null`. Unknown top-level fields/versions are rejected; adding fields
 requires compatible readers before producer rollout, or a schema-version change.
 
-## FastAPI shell — step 1.6
+## FastAPI shell вЂ” step 1.6
 
 `statistics_agent.app.create_app(settings=None, log_stream=None)` returns an
 isolated FastAPI application. Supply validated settings in tests or let the
@@ -153,7 +420,8 @@ contact infrastructure. Lifespan tracks startup/shutdown and emits service event
 step 1.7 now creates the lazy database pool here and disposes it on shutdown.
 
 From the service directory with its `.venv` activated, create an ignored `.env`
-from `.env.example` if needed, replace placeholder configuration, and start:
+from `.env.example` if needed. Add resource-auth settings from
+`.env.resource-auth.example`, replace placeholders, and start:
 
 ```powershell
 python -m uvicorn statistics_agent.app:create_app --factory --loop statistics_agent.core.event_loop:create_event_loop --env-file .env --host 127.0.0.1 --port 8000 --no-access-log
@@ -162,8 +430,8 @@ python -m uvicorn statistics_agent.app:create_app --factory --loop statistics_ag
 The explicit `--env-file` is local development only; deployment injects variables
 and omits it. The PostgreSQL URL must be structurally valid, but the shell opens
 connections only when an operation needs one. `/docs` and `/openapi.json` exist only in development/test;
-staging/production disable them. Other paths return safe 404 envelopes. There are
-no business/authentication or health endpoints yet. HTTPX/TestClient test routes
+staging/production disable them. Bearer mode exposes `GET /auth/me`. Health
+probes are documented below. HTTPX/TestClient test routes
 are registered only in the tests, never in the factory.
 
 `X-Request-ID` accepts one canonical UUID, otherwise generates a fresh UUID. The
@@ -190,7 +458,7 @@ Lifespan follows the [FastAPI context-manager interface](https://fastapi.tiangol
 The existing CI job runs the new tests automatically when their branch is opened
 as a PR. No dependencies or workflow changes were needed for this step.
 
-## PostgreSQL foundation — step 1.7
+## PostgreSQL foundation вЂ” step 1.7
 
 The agent owns its schema and application SQL in this repository. PostgreSQL is
 an independent container/process with private credentials and persistent storage;
@@ -246,7 +514,7 @@ run `down --volumes` unless intentionally discarding local database data.
 Lifespan provides `app.state.database`, an instance of
 `statistics_agent.persistence.database.Database`. Imports, app construction and
 pool construction perform no database I/O; the first operation checks out a
-connection. Startup may succeed during an outage; readiness is implemented in 1.9.
+connection. Startup may succeed during an outage; readiness now reports 503 until the database and schema are usable.
 Shutdown disposes idle connections after operations finish and clears the state.
 A closed Database rejects future sessions; each process/lifespan gets its own pool.
 
@@ -268,8 +536,7 @@ from DB_STATEMENT_TIMEOUT_MS. libpq connection timeouts apply per connection
 attempt/address and have a two-second minimum. Pre-ping checks stale connections;
 SQL echo is disabled and bound parameters are hidden in SQLAlchemy errors. Raw
 SQL/driver exceptions must still not be logged or exposed by callers. Existing
-safe HTTP handling contains database failures. DB_HEALTH_TIMEOUT_SECONDS is
-configuration only until readiness in 1.9. No schema creation runs at startup.
+safe HTTP handling contains database failures. DB_HEALTH_TIMEOUT_SECONDS now bounds the readiness probe work. No schema creation runs at startup.
 
 ### Disposable database tests and CI
 
@@ -306,7 +573,7 @@ Sources: [SQLAlchemy async sessions](https://docs.sqlalchemy.org/en/20/orm/exten
 [Psycopg Windows asyncio requirements](https://www.psycopg.org/psycopg3/docs/advanced/async.html).
 Step 1.8 now supplies an explicit empty baseline; no business tables were added.
 
-## Alembic baseline and schema gate — step 1.8
+## Alembic baseline and schema gate вЂ” step 1.8
 
 Migration scripts live inside `src/statistics_agent/persistence/migrations/`, so
 they ship in the application package. `alembic.ini` points to that package and
@@ -329,8 +596,7 @@ return exit code 0 for success and 1 for a mismatch/failure. Output uses fixed
 safe messages, never URLs, SQL, raw exceptions or rejected values. The check
 is read-only: it compares database heads with the packaged migration heads,
 without creating a version table or silently stamping an unknown revision.
-`read_schema_status(connection)` is also available for the readiness check in
-1.9; HTTP health routes are not added here. Offline SQL generation needs no DB:
+`read_schema_status(connection)` is used by the readiness route added in 1.9. Offline SQL generation needs no DB:
 
 ```powershell
 python -m alembic upgrade head --sql
@@ -364,10 +630,10 @@ from the template succeeded. Ruff lint/format and `pip check` pass. One existing
 TestClient/HTTPX warning remains. The existing required `tests` CI job discovers
 these checks automatically; this branch's GitHub run remains pending.
 
-Local persistent agent_db was checked without changes and currently reports a
-schema mismatch because its baseline has not been applied. Run the explicit
-upgrade command above when ready to initialize it. No migration was applied to
-that persistent database during this implementation. Disposable test resources
+During 1.8, the local database was checked read-only and was then unmigrated.
+At 1.9 verification it already matched the expected schema; both local probes
+returned 200. No persistent migration or data change was performed in 1.9.
+Fresh databases still need the explicit upgrade command before readiness passes. Disposable test resources
 were removed afterward. No new dependency, Dockerfile, deployment or health
 route was introduced. Implementation branch: `feature/alembic-baseline`.
 
@@ -404,7 +670,7 @@ python -m ruff format --check src tests
 python -m pytest -q
 ```
 
-Identity configuration belongs in `services/identity/` when plan 2 starts.
+Identity configuration belongs in `services/datalens-identity/` when plan 2 starts.
 Keycloak owns the separate `identity_db`; agent migrations do not manage it.
 Credentials belong in ignored local configuration or deployment secret injection.
 
@@ -477,3 +743,589 @@ during this verification.
 Planning documents in the parent workspace are outside this Git repository and
 will not appear in its PR. Changes to them are reported separately until they
 have their own version-control location.
+
+
+Internal service names are logical and omit the product prefix. Repository and
+folder names retain `datalens-`; Compose projects retain environment scope.
+Existing physical volume names are preserved to avoid replacing stored data.
+
+
+## Authentication configuration вЂ” step 3.1
+
+Implemented locally on `feature/auth-configuration`. See
+[configuration, secret formats and verification](docs/auth-configuration.md).
+New opt-in `AuthSettings`, explicit secret-file loading and immutable safe
+principal/failure contracts are available. PyJWT/cryptography are pinned in the
+existing requirements.txt; `.env.auth.example` contains references only and
+`secrets/` is ignored. No real credentials were generated or read.
+
+At completion of step 3.1, the FastAPI factory did not load auth configuration. No new route, session
+storage, migration, login, refresh or permission enforcement is implemented;
+existing health behavior remains intact. Docker stayed closed. The local
+`datalens` realm still needs operator onboarding before live integration.
+
+Focused tests: **47 passed**. Complete non-database regression selection:
+**181 passed; 20 PostgreSQL tests deselected**. Ruff/format/pip checks and in-memory
+RS256/Fernet compatibility checks passed. One existing Starlette/HTTPX warning
+remains. No live Keycloak/database suite or prior remote checks were repeated.
+
+Pre-existing naming edits in this checkout were preserved. No changes were staged,
+committed or pushed. Separate those edits from this feature before publication;
+do not assume the whole working-tree diff belongs to 3.1. Service documentation
+and implementation belong in its PR; parent planning files remain outside Git.
+Step 3.1 delivery is now accepted from the user's pull/check confirmation.
+
+
+## Planned local token authorization вЂ” 27 October 2026
+
+Per the revised plan, protected requests will validate signed JWTs locally using
+trusted cached keys and local session state. No per-request Keycloak introspection.
+Token lifetime stays at most five minutes (initial expiry leeway zero); remote
+role/email/account/logout changes may take until expiry to affect access. Local
+application logout still invalidates its session immediately. Known keys within
+a maximum one-hour trust lease support valid-token requests through identity
+outage; expired tokens, missing/untrusted keys, login and renewal cannot bypass
+necessary provider checks. Unknown kid/lease expiry triggers bounded key retrieval.
+No new gateway, broker or revocation service. Keep encrypted backend tokens and
+opaque cookie/CSRF design. See [the configuration guide](docs/auth-configuration.md)
+and updated identity handoff. This policy revision changed documentation only;
+active agent login and authorization remain unimplemented.
+
+## Encrypted session storage вЂ” step 3.2
+
+Implemented locally on `feature/session-storage`. See
+[storage behavior, migration and verification](docs/auth-storage.md).
+Migration `0002_auth_storage` adds agent-owned pending logins and browser sessions.
+Random browser credentials/state are hashed; OAuth tokens and nonce/PKCE material
+are encrypted with context-bound Fernet envelopes and external active/read keys.
+Repositories enforce one-use login consumption, browser binding, session deadlines,
+local revocation, version-checked credential updates and bounded explicit cleanup.
+
+All **221 tests passed**, including real disposable PostgreSQL migration and
+concurrency checks; Ruff and pip consistency checks passed. Existing required CI
+already runs the new tests. No runtime dependency or identity change was needed.
+No auth route or startup wiring was added; persistent development data was not
+migrated. Readiness requires the new migration before running this revision
+against an existing database. No real credentials were created.
+
+Existing local-token-policy documentation edits were preserved in this checkout;
+they are compatible with this step and are not claimed as separately published.
+No commit/push occurred. Parent plans are outside this repository/PR.
+Step 3.2 delivery/pull is accepted from the user confirmation; subsequent 3.3
+implementation is recorded below.
+
+
+## Browser login and callback вЂ” step 3.3
+
+Implemented locally on `feature/browser-login`. See [setup, flow and fixture
+commands](docs/browser-login.md). GET `/auth/login` redirects to Keycloak with
+browser-bound state, nonce and S256 PKCE. GET `/auth/callback` consumes the attempt,
+exchanges the code, verifies ID/access JWTs and signed email/role claims, then
+stores encrypted tokens and sets a fresh opaque HttpOnly session cookie. No
+OAuth tokens reach application responses or JavaScript. Auth responses use
+no-store/no-referrer; errors are fixed 401/403/503, or 409 for a pending login.
+
+The factory now requires auth configuration/secrets. Discovery/signing keys are
+fetched lazily, coalesced and cached for at most one hour; refresh attempts are
+limited to once per five seconds per process. Algorithms/endpoints are trusted
+configuration, never token-supplied URLs. No introspection is performed. Health
+semantics remain unchanged and startup performs no identity network request.
+
+Verification: **274 tests passed**, no skips, including eight real Chromium +
+Keycloak + PostgreSQL scenarios, 31 provider/signature/cache tests and 14 HTTP
+protocol checks. Ruff, touched-file formatting and pip consistency checks passed.
+One existing Starlette/HTTPX deprecation warning remains. Existing `tests` CI now
+installs Chromium, starts disposable Keycloak and always cleans it up. The browser
+fixture uses synthetic identities and temporary H2 storage; production identity
+PostgreSQL and real accounts were untouched. Earlier failed fixture runs involved
+a realm-import filename, redirect interception and an error-theme selector; these
+were corrected. A stale health-only OpenAPI assertion was updated for auth routes.
+
+At completion of 3.3 there was no frontend, `/auth/me`, protected-operation CSRF,
+ownership, refresh or logout. Step 3.4 below now adds request authorization. Successful login redirects to `/`,
+which currently returns 404; the session cookie is created. Public protected-route
+behavior and automatic refresh remain steps 3.4/3.5, not claimed by login success.
+No real secret files were generated and no persistent database was migrated.
+
+No commit/push/remote CI result is claimed. Publish this branch through its PR
+with required `tests`. Parent plans/README remain outside service Git/PRs. Stop
+before 3.4; it requires a separate request.
+
+
+## Protected requests and ownership вЂ” step 3.4
+
+Implemented locally on `feature/token-authorization`. Step 3.3 delivery/pull is
+accepted from the user's confirmation. See [request behavior and route integration](docs/request-authorization.md).
+GET `/auth/me` returns safe identity/roles, verified-email status and a session-
+bound CSRF token. It never returns the browser credential or OAuth tokens.
+Reusable user/admin dependencies validate the local session and signed JWT on
+every operation, match issuer/subject, enforce roles and conditionally update
+idle activity only after successful authorization. Admin includes user permission.
+
+Cookie-authenticated writes require one exact trusted Origin and one session-bound
+X-CSRF-Token header. Responses from protected dependencies use no-store/no-referrer.
+The SQL ownership helper filters both issuer and subject inside the query; admin
+cannot bypass ownership. Resource tables/routes used to prove this remain test-only.
+
+All **305 tests passed**, no skips, including 31 new PostgreSQL-backed access
+checks and real Chromium `/auth/me` after Keycloak login. The expiry-boundary
+check also passed a focused rerun after a slow-CI timing assumption was removed.
+Ruff, touched formatting and pip consistency checks passed. One pre-existing
+Starlette/HTTPX warning remains. Existing required `tests` CI collects the new
+cases; no job, migration, dependency or configuration addition was necessary.
+
+Ordinary valid-token requests use cached trusted keys without introspection or
+identity lookup. Invalid/expired local state or tokens return 401, permission
+failures 403 and required key/DB outages safe 503. Role changes may lag until
+JWT expiry; local session revocation denies the old cookie. At completion of 3.4, automatic refresh/logout remained pending; step 3.5 below
+now implements them. Dataset/run APIs and frontend remain unimplemented. Persistent data,
+real accounts and identity repository were untouched.
+
+No commit/push/remote CI result is claimed. Publish `feature/token-authorization`
+through a PR and required `tests`; parent plans stay outside service Git/PRs.
+Step 3.4 delivery/pull is now accepted from the user confirmation.
+
+
+## Automatic refresh and logout вЂ” step 3.5
+
+Implemented locally on `feature/session-refresh-logout`; see
+[protocol, migration and recovery](docs/session-refresh-logout.md). An otherwise-
+valid expired JWT renews in the backend, keeping the same opaque cookie and CSRF
+proof. Fresh signed identity/role claims are validated before committing rotated
+credentials. Permission/signature/owner failures do not initiate renewal.
+
+Migration `0003_refresh_claim` adds a durable claim protected by short PostgreSQL
+row locks. One replica exchanges a refresh credential; others use its stored
+replacement. No network call holds a DB transaction open. A crash, uncertain
+response or failed commit never causes reuse of the old refresh token. Stale
+claims revoke the session; recovery requires login. Required claims use an explicit
+bounded lease and operation deadline derived from existing HTTP settings.
+
+POST `/auth/logout` checks exact Origin/session-bound CSRF, commits local
+revocation, attempts standard Keycloak RP-Initiated Logout POST and clears the
+cookie. It reports provider failure without restoring local access. Logout works
+with expired JWTs or lost roles and during provider outage; it still needs the
+agent DB. An in-flight operation cannot be undone and a concurrent refresh cannot
+restore a revoked local session. Provider cookies/tokens are never forwarded to
+the browser or put in URLs.
+
+Verification: **331 tests passed**, no skips, including 26 lifecycle checks and
+nine real Chromium/Keycloak scenarios. Two FastAPI instances share one renewal;
+real natural expiry rotates credentials with stable cookie/CSRF, then logout
+causes Keycloak to reject the saved refresh token. Crash/timeout/cancel/logout
+races, claim/credential commit uncertainty, role changes and safe migration
+rollback are covered. Ruff/format/pip checks passed; one existing Starlette/HTTPX
+warning remains. No new dependency, real secrets, persistent development migration
+or identity repository change. Broader retained-storage/provider-state handoff is 3.6.
+
+The earlier CI visibility patch was discarded exactly as requested. User confirms
+3.4 succeeded and was pulled; that disabled-login check remains unchanged.
+No commit/push/remote CI result is claimed. Publish this branch through a PR and
+required `tests`. Parent plans remain outside service Git/PRs. Apply the new
+migration before running this revision against an older persistent database.
+Step 3.5 delivery/pull is now accepted from the user confirmation; subsequent
+3.6 verification is recorded below.
+
+
+## Access integration and handoff вЂ” step 3.6
+
+Completed locally on `test/access-integration`; see [complete handoff](docs/access-handoff.md).
+Eight additional real integration cases prove captured email activation, actual
+API process restarts, encryption read-key rotation/loss/restoration, corrupt/
+missing key startup failure, actual Keycloak role/email/account/logout changes
+at JWT expiry, and real identity outages through warm/cold keys, expiry and local
+logout. The same old cookie remains denied after local revocation and restart.
+
+The isolated identity fixture now has its own PostgreSQL database on tmpfs and
+Mailpit, separate from the agent fixture/developer storage. It contains synthetic
+realms/users and a test-only administrator. Outage control targets only the fixed
+test Compose project. CI keeps the required job named `tests`, uses a bounded
+240-second identity startup and always cleans that explicit project afterward.
+No browser/mail/OAuth artifacts are published.
+
+Full regression: **339 passed**, no skips, in 289.31 seconds. Ruff, touched-file
+formatting and pip checks passed; one existing Starlette/HTTPX warning remains.
+Application code, dependencies and migrations were unchanged by this step.
+No persistent developer DB, real account/key or identity repository was touched.
+All prior protocol, ownership, CSRF, RSA/JWKS, two-instance and durable-refresh
+checks remain in the same gate. Actual Keycloak signing-key rotation, production
+SMTP/TLS, backup restoration and cloud delivery are not claimed.
+
+The handoff documents local provisioning, same-origin frontend cookie/CSRF use,
+401/403/503 handling, agent principal/ownership rules, restart/key recovery,
+cleanup and outage bounds. No frontend or business agent was implemented.
+
+Step 3.6 delivery is now accepted from the user pull confirmation. Parent
+plans/README remain outside service Git/PRs.
+
+
+## Agent interfaces вЂ” step 4.1
+
+Complete locally on `feature/agent-contracts`; PR/required `tests` CI pending.
+[Agent contracts and remaining handoffs](docs/agent-contracts.md) define provider
+request/response, usage/failure, authorized context, versioned prompt/state and
+async provider/tool/policy/event interfaces. Unknown usage stays null; original
+malformed tool proposals retain identity and arguments before validation.
+
+Verification: **263 passed, 101 database/browser tests deselected**; one existing
+Starlette/HTTPX warning. No new dependencies, migrations, runtime endpoints or
+provider calls. CrewAI integration and real tools remain later steps.
+
+Stop before 4.2 provider profiles/secrets. User publishes this branch through a
+PR to main; no commit, push or remote CI success is claimed here.
+
+
+## Provider profiles and secrets вЂ” step 4.2
+
+Complete locally on `feature/provider-profiles`; PR/required CI pending.
+[Model configuration](docs/model-configuration.md) defines Groq-first/Azure profiles,
+`SERVICE_MODEL_API_KEY`, bounded settings, safe errors and immutable public snapshots.
+The existing key was neither read nor sent. Loader integration/model calls remain 4.3.
+Verification: 277 passed, 101 database/browser tests deselected; Ruff/pip checks pass.
+No dependency or migration changes. Stop before 4.3.
+
+
+## LLM adapter and evidence — step 4.3
+
+Complete locally on `feature/llm-adapter`; required PR CI pending.
+[Adapter handoff](docs/llm-adapter.md) documents single-attempt Groq/Azure HTTPX
+normalization, actual CrewAI BaseLLM integration, redacted evidence and controlled
+tool handoff. No new HTTP routes or executable statistics Agent yet.
+
+CrewAI 1.15.33 requires the Pydantic pin to change to 2.12.5. Verification:
+**302 passed, 101 database/browser tests deselected**; Ruff/pip checks passed.
+Docker Linux engine was stopped, so full integration remains required in CI.
+No live model requests. Stop before 4.4.
+
+
+## Statistics Agent and run isolation — step 4.4
+
+Complete locally on `feature/statistics-agent`; required PR CI pending.
+[Agent handoff](docs/statistics-agent.md) covers one CrewAI Agent per session,
+versioned prompts/output, controlled typed tool/policy continuation and isolated
+state. Explicit incomplete outcomes cover provider/tool failures and invalid
+result references. No real numerical tool, HTTP run API or live model call yet.
+
+Verification: **315 passed, 101 database/browser tests deselected**; final targeted
+agent tests **13 passed**. Ruff/format/pip/diff checks pass. CrewAI reports 43 upstream
+deprecation warnings. No dependency or migration changes. Stop before 4.5.
+
+
+## Retry, budget and failure behavior — step 4.5
+
+Complete locally on `feature/retry-budgets`; PR/required CI pending.
+[Execution limits](docs/execution-limits.md) documents observed bounded retries,
+input reservations/output accounting, run/tool deadlines and shared process-level
+model admission. No exact-tokenizer, distributed quota or spend-cap claim is made.
+The existing real model key was not modified; no live provider request was made.
+
+Verification: **336 passed; 101 database/browser tests deselected**; Ruff/format,
+pip consistency and diff checks pass. CrewAI reports 115 upstream deprecation
+warnings. No dependencies or migrations changed. Stop before 4.6.
+
+
+## Provider verification and handoff — step 4.6
+
+In progress pending clean required CI/delivery on `test/provider-verification`. The latest live Groq checks pass after a typed-finalization fix. [Verification guide](docs/provider-verification.md)
+adds an explicit `--live` synthetic check plus offline and real PostgreSQL/JWT/CSRF
+handoff tests. Groq selected the tool and the fixture computed mean 4.0, but the
+initial live final-answer flow failed; the continuation fix below supersedes that result. Azure remains
+unconfigured/unverified. Groq now has scoped synthetic live evidence.
+
+Verification: **427 passed, 17 browser tests deselected**; Ruff/format/pip/diff
+checks pass, 133 upstream CrewAI warnings. Pinned requirements unchanged; repaired
+the existing local .venv. No production endpoints, real dataset tools, migrations
+or cloud deployment. These initial counts are historical; see the current correction below. Clean required PR CI remains pending.
+Stop within 4.6; plan 5 has not started.
+
+
+## Pre-merge verification — 29 October 2026
+
+Full local gate: **444 passed, no skips**, including disposable PostgreSQL,
+Keycloak and Chromium. Ruff/pip/diff checks pass. The separate live Groq check
+computed mean 4.0 but then failed with HTTP 400 `tool_use_failed`; merge is not
+recommended as completed provider support. [Evidence](docs/provider-verification.md).
+No product code fixes were applied in this verification-only pass.
+
+
+## Current continuation fix and merge gate
+
+Groq finalization now uses a distinct validated answer function. Three latest
+consecutive live probes passed (computed mean 4.0; two HTTP 200 requests each).
+Earlier model errors remain rejected; no universal reliability claim is made.
+Full local gate: **449 passed, one browser assertion failed**; the failed case
+passed in isolation. Required GitHub tests must pass before merge.
+[Current evidence](docs/provider-verification.md#continuation-fix--29-october-2026-supersedes-earlier-live-blocker)
+supersedes the historical pre-merge blocker above. No production API/tool,
+dependency or database migration added. Stop within 4.6.
+
+Focused post-failure rerun: **47 passed**, 36 upstream warnings, 59.78 seconds.
+Includes the entire browser-login module plus native finalization, model adapter,
+provider verification and real PostgreSQL/JWT/CSRF handoff tests. No auth code
+or browser test was changed to obtain this result. Both disposable Docker test
+projects were removed after verification; Docker Desktop remains running.
+
+
+## Current planning step — dataset storage and statistics tools
+
+Plan 4.6 delivery is accepted from the user's pull confirmation. Prior pending
+CI/hold entries above describe historical checks. [Plan 5 handoff](docs/dataset-tools.md)
+now defines seven ordered steps, all Not started. Begin with 5.1 contracts when
+requested; then persistence, CSV validation, dataset lifecycle, inspection/
+description, aggregation/correlation and integration. HTTP APIs remain plan 7.
+This documentation branch changes no runtime, dependencies or database schema.
+The detailed parent plan/canonical note are outside this repository and PR.
+
+## Confirmed conversation architecture — design only
+
+[Architecture](docs/agent-architecture.md) records current versus planned behavior,
+service/node diagrams, four numerical tools and separate control functions,
+clarification/partial-result fallbacks, PostgreSQL jobs and Kafka telemetry.
+Multiple datasets are analyzed separately within a stored conversation; no joins.
+Only bounded context reaches the model, and only one run per conversation is
+active. These capabilities are not implemented by this documentation change.
+
+The parent plans 5–7 and frontend handoff are aligned. Plan 7 will extend the
+existing single-run runner compatibly; needs_input and persistent follow-up
+context are not available yet. Next implementation remains dataset contracts
+5.1, when requested. No dependency, source, migration or deployment changes here.
+The service PR includes this architecture/README/handoff; parent planning files
+remain outside this repository and must be shared separately.
+
+Documentation verification: 27 local link targets and balanced code fences in
+10 architecture/plan files checked; service Git whitespace check passes. No
+runtime, dependency, migration or environment changes; runtime tests not rerun.
+Required PR tests still apply before merging the service documentation branch.
+
+## Current implementation — dataset contracts 5.1
+
+Complete locally on feature/dataset-contracts; required PR tests/delivery pending.
+[Dataset contracts](docs/dataset-contracts.md) now define bounded metadata,
+rectangular string/null previews, fixed failures and strict arguments for the
+four numerical tools. Missing-value strategy is explicit; numerical calls target
+one dataset and reject code/SQL/joins or client-supplied ownership. Contract
+validation does not establish authorization or enforce limits on real CSV files.
+
+Added 61 tests. Final offline suite: 409 passed, 102 database/browser tests
+explicitly deselected, 148 upstream warnings. Ruff formatting/checks and pip
+consistency pass. No dependency, migration, parser, executor, API route or live
+provider changes. Existing DatasetSummary/runner behavior remains unchanged.
+Stop before 5.2 owned persistence until this step is delivered and requested.
+
+Architecture/handoff files already uncommitted at step start are preserved on
+this branch; no claim they were previously published. Parent plans/canonical
+progress remain outside this service repository/PR.
+
+## Current implementation — owned storage 5.2
+
+Step 5.1 delivery is accepted per user pull confirmation. Step 5.2 is complete
+locally on feature/dataset-storage; required PR tests/delivery pending.
+[Storage handoff](docs/dataset-storage.md) documents owner-filtered repositories,
+metadata/raw-byte separation, bounded JSON artifacts, hash checks and cascading
+cleanup. Unknown/cross-owner reads share one fixed not-found failure; admin does
+not grant access to other users' data. File bytes/metadata commit atomically.
+
+Migration 0004_dataset_storage is additive and preserves existing auth rows.
+New readiness expects 0004; use the existing explicit upgrade/check lifecycle
+before running the new release against a persistent database. Only disposable
+PostgreSQL was migrated here. Test rollback drops the new dataset/artifact tables;
+it is not a production data-preserving undo operation.
+
+Verification: 517 passed with real PostgreSQL, 17 browser tests deselected,
+151 upstream warnings; Ruff format/checks and pip consistency pass. Disposable
+test project removed; Docker Desktop remains running. No existing auth logic,
+dependency, parser, numerical tool, API or cloud resources changed. Stop before
+5.3 CSV parsing. No commit/push/PR has been performed in this implementation
+turn. Parent canonical note/plans remain outside service Git/PRs.
+
+## Current implementation — bounded CSV validation 5.3
+
+Step 5.2 delivery accepted per user pull confirmation. Step 5.3 is complete
+locally on feature/csv-validation; required PR tests/delivery pending.
+[CSV parser](docs/csv-validation.md) validates UTF-8/BOM, strict quotes, rectangular
+records, actual column/row counts and configured size limits. It preserves raw
+bytes/nonmissing text, marks blanks as missing and infers numeric/text without
+silently coercing malformed text. NaN/infinity and overflowing numeric forms
+are rejected. Bounded previews are internal owner-authorized UI data.
+
+Added 65 tests; focused parser/contracts gate: 126 passed. Offline regression:
+484 passed, 115 database/browser tests deselected, 148 upstream warnings.
+Ruff/format/pip checks pass. Standard library only; no dataframe/new dependency,
+schema, database, auth/provider or API changes. Parsing is synchronous and pure;
+5.4 must offload and compose parse-before-storage. Stop before that step.
+No commit/push/PR performed. Parent plans remain outside this service Git/PR.
+
+## Current implementation — internal dataset lifecycle 5.4
+
+Complete locally on feature/dataset-lifecycle; required PR tests/delivery pending.
+The previous CSV-validation branch is included in locally cached origin/main.
+[Dataset lifecycle](docs/dataset-lifecycle.md) now composes validated ingestion
+with owned storage, metadata/list/delete, bounded previews and authorized loading.
+Counts/columns derive from actual CSV, and load rechecks ownership/existence and
+metadata consistency after offloaded parsing. No client-supplied ownership/schema
+or bypass of validation is accepted through this service.
+
+Injected DatasetParser uses bounded threads with immediate busy rejection.
+Cancellation holds admission until real work ends; parsing-cancelled ingestion
+does not write later. The application must share one pool per process and close
+it after draining service work; no app/lifespan wiring or business route is added
+here. Current auth/session APIs are unchanged. No statistical computation yet.
+
+Added 22 tests. Full PostgreSQL/non-browser regression: 604 passed, 17 browser
+tests deselected, 151 upstream warnings; Ruff/format/pip checks pass. No migration,
+dependency, provider or cloud changes; schema stays 0004_dataset_storage. Only
+disposable test PostgreSQL used/removed, with Docker Desktop left running.
+No commit/push/PR performed. Stop before 5.5. Parent plans remain outside service
+Git/PRs; this README and lifecycle documentation are part of the service branch.
+
+## Step 5.5 implementation record — inspection/descriptive tools
+
+Step 5.4 delivery accepted per user confirmation. Complete locally on
+feature/descriptive-tools; required PR tests/delivery pending.
+[Real numerical tools](docs/descriptive-tools.md) provide inspect_dataset and
+describe_columns with strict bindings, owned loading, typed finite results and
+persisted artifacts tied to actual tool-call IDs/dataset checksums. NumPy 2.5.4
+is directly pinned; descriptions use float64, population ddof=0 and linear
+quartiles. Empty samples have unavailable metrics, not NaN. Arithmetic range
+errors return an explicit failure.
+
+Parsing and server-owned computation share bounded worker admission. Small
+observations contain the result; larger admitted results explicitly reference
+the full artifact. No silent truncation, budget increase, production policy,
+new live model request or API integration. Grouping/correlation remain 5.6.
+Added 34 tests. Focused gate: 41 passed. Full PostgreSQL/non-browser gate:
+638 passed, 17 browser tests deselected, 151 upstream warnings; Ruff/format/pip
+checks pass. No schema/auth/provider/cloud changes; only disposable test DB used
+and removed. No commit/push/PR performed; parent plans remain outside service Git.
+
+## Step 5.6 implementation record — aggregation/correlation
+
+Step 5.5 delivery accepted per user confirmation. Complete locally on
+feature/aggregation-correlation; required PR tests/delivery pending.
+[Aggregation/correlation](docs/aggregation-correlation.md) complete the four
+numerical bindings: count/sum/mean/min/max with optional bounded grouping, and
+Pearson/Spearman coefficients on complete pairs of columns in one dataset.
+Group keys preserve exact text; missing/valid/dropped counts are explicit.
+Default/max 50 groups, no silent truncation. Constant or fewer-than-three-pair
+correlations are unavailable, not NaN. No p-values, hypotheses, joins or causality.
+
+SciPy 1.18.1 added for average Spearman ranks; NumPy remains 2.5.4. Owned loading,
+bounded shared compute, artifact/call provenance and size guards are reused.
+Full agent/tool registry/input-budget tests remain 5.7; production policy and
+HTTP APIs are later plans. No live model request or budget increase here.
+
+Added 45 tests. Focused gate: 58 passed. Full PostgreSQL/non-browser gate:
+683 passed, 17 browser tests deselected, 151 upstream warnings; Ruff/format/pip
+checks pass. No schema, auth/provider or cloud changes. Only disposable test
+PostgreSQL used/removed; Docker Desktop remains running. No commit/push/PR
+performed. Parent canonical note/plans remain outside this service Git/PR.
+
+
+## Current implementation — agent/tool integration 5.7
+
+Step 5.6 delivery accepted per user pull confirmation. Step 5.7 is complete
+locally on `test/agent-tool-integration`; required PR tests/delivery pending.
+[Integration handoff](docs/agent-tool-integration.md) documents all four real
+tools through StatisticsSession, committed owned artifacts, exact call references,
+strict validation/denials and independently retained results on incomplete runs.
+Only provider transport and policy are test fixtures; production policy remains
+plan 6 and business APIs/jobs/Kafka delivery remain plan 7.
+
+Prompt statistics-v3, lean provider schemas and structured observations remove
+redundant wire overhead. Original Pydantic bounds and all numerical values remain
+authoritative; full provenance/version metadata stays in PostgreSQL artifacts.
+That step retained the 4096-unit request cap. Step 7.4 explicitly versions new
+profiles to a 6144-unit cap; total run input is unchanged. Wide/long transcripts can still exceed
+it; tests verify stopping before dispatch while preserving existing artifacts.
+No frontend route or new live model compatibility is claimed.
+
+
+Verification: **709 passed, 17 browser tests deselected**, 214 upstream warnings,
+33.58 seconds, with real disposable PostgreSQL and mock model transport. Added
+26 tests; Python Ruff checks/formatting (`src` and `tests`), pip consistency and
+whitespace checks pass. Browser/auth behavior was not changed; required GitHub
+`tests` still includes browser coverage. No live LLM call, new dependency,
+migration, auth/HTTP change or cloud deployment. Only the fixed disposable test
+PostgreSQL was used and removed; developer/identity databases remain untouched.
+No commit or push performed. Required PR checks/delivery remain pending.
+
+Next: deliver this step through a PR with required `tests`; then implement only
+6.1 policy configuration when requested. Parent canonical note/plans/frontend
+handoff remain outside this service Git repository and PR.
+
+## Current maintenance — module boundary refactor
+
+Complete locally on `refactor/module-boundaries`; required PR tests/delivery
+pending. [Module ownership and verification](docs/module-boundaries.md) records
+lightweight tool/prompt/error definitions, shared agent/session contracts,
+separate runner execution/finalization phases and reusable test support.
+Numerical tools no longer import the CrewAI-backed runner; OIDC no longer imports
+PostgreSQL persistence merely to share credential records. Old import identities
+remain compatible. Tests register shared database fixtures in `conftest.py` and
+inject provider responses through existing transport construction.
+
+Final gate: **731 passed, no skips**, including all 17 real browser/auth tests;
+214 upstream warnings. Ruff checks/formatting for `src` and `tests`, pip consistency
+and refactor whitespace checks pass. New import tests verify that shared modules
+do not initialize CrewAI or alter framework environment flags. No schema,
+dependency, public API, prompt-version, permission or numerical-behavior change.
+Disposable fixtures removed; development data untouched. No commit/push performed.
+The baseline outage-login browser case failed once and passed in isolation; the
+final full suite passed without retries. Keep this observation when assessing CI.
+
+This maintenance task does not implement plan 6.1 or security follow-up 3.7.
+Parent planning updates remain outside the service repository and its PR.
+
+## Current implementation — policy configuration 6.1
+
+The module refactor is delivered per user pull confirmation. Step 6.1 is complete
+locally on `feature/tool-policy-config`; required PR tests/delivery pending.
+[Policy contracts and boundaries](docs/tool-policy.md) describe immutable versioned
+allowlists, default-disabled tools, strict operations/methods/limits and separate
+allowed/denied/unavailable/not-evaluated evidence. Both control-function names are
+reserved against numerical registry shadowing. Existing ToolDecision/event formats
+and legacy imports remain unchanged.
+
+Static rule permission is not owned execution authorization: 6.2 supplies that
+check, 6.3 applies data-dependent guards and 6.4 wires the complete runner policy.
+No public run endpoint or policy-administration API is enabled. Added 44 tests;
+758 passed with disposable PostgreSQL, 17 browser tests deselected, 214 upstream
+warnings. Python Ruff/format/pip and whitespace checks pass. No dependency,
+migration, numerical behavior, JWT/browser-auth or cloud change. No live LLM call.
+Disposable test PostgreSQL removed; no commit/push. Next is 6.2 after PR delivery
+and user instruction; parent planning files remain outside the service PR.
+
+## Current implementation — owned authorization 6.2
+
+Step 6.1 delivered per user pull confirmation. Step 6.2 is complete locally on
+`feature/owned-tool-authorization`; required PR tests/delivery pending.
+[Owned authorization](docs/owned-tool-authorization.md) implements ToolPolicy
+using exact execution scope, current access, static rules and owner-filtered
+metadata. Users/admins can only use selected own datasets. Invalid columns/types
+are denied before computation; missing/deleted/foreign/unselected references use
+safe denials. Operational failures remain distinct and cancellation propagates.
+Executor ownership checks remain active, including deletion after approval.
+
+Added 56 tests. Final PostgreSQL/non-browser gate: **814 passed, 17 browser tests
+deselected**, 214 upstream warnings. Ruff/format/pip/whitespace checks pass. No new
+dependency, schema, JWT/browser-auth, numerical or HTTP behavior. No model/cloud
+call. Disposable database removed; developer data untouched. No commit/push.
+Data-dependent guards and production composition remain 6.3/6.4. Next is 6.3
+after PR delivery/user instruction. Parent plans remain outside the service PR.
+
+### CI timing follow-up
+
+The disabled-account browser test waits for the denial document and visible login
+button after receiving response headers; it still requires HTTP 200 and no agent
+session cookie. Real PostgreSQL health tests use the existing two-second default
+probe deadline instead of a test-only 0.2 seconds. Pool exhaustion, query timeout,
+connection failure and recovery assertions remain bounded. A 250 ms delayed schema
+check reproduces the old false failure and now verifies healthy recovery. No
+application timeout, authentication behavior, dependency or CI requirement changed.
+
+Verification: the delayed-probe regression failed before the fix with the reported
+503-versus-200 symptom; focused checks then passed (14 tests). The full suite passed
+with disposable PostgreSQL and Keycloak: **832 passed, no skips**, including all
+17 browser tests, with 214 upstream warnings in 371.80 seconds. Ruff, formatting,
+dependency and whitespace checks passed. Remote required `tests` still runs on the
+PR; no commit or push was performed.

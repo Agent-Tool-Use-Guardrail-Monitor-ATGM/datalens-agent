@@ -13,7 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError, TimeoutError
 
-from statistics_agent.app import create_app
+from app_support import create_app
 from statistics_agent.core.event_loop import create_event_loop
 from statistics_agent.core.settings import Settings
 from statistics_agent.persistence.database import Database

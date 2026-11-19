@@ -2,6 +2,8 @@
 .venv/
 venv/
 
+.vscode/
+
 # Python bytecode and build artifacts.
 __pycache__/
 *.py[cod]
@@ -24,8 +26,14 @@ coverage.xml
 .env.*
 !.env.example
 !.env.postgres.example
+!.env.auth.example
+!.env.resource-auth.example
+secrets/
 
 # Local logs and operating-system files.
 *.log
 .DS_Store
 Thumbs.db
+
+skills-lock.json
+

@@ -17,7 +17,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.testclient import TestClient
 from starlette.responses import StreamingResponse
 
-from statistics_agent.app import create_app
+from app_support import create_app
+from statistics_agent.app import create_app as bearer_app
 from statistics_agent.core.logging import request_id_context
 from statistics_agent.core.settings import ConfigurationError, Settings
 
@@ -79,7 +80,7 @@ def test_factory_and_lifecycle_do_not_connect_and_use_one_settings_object(settin
         with monkeypatch.context() as isolated:
             isolated.setattr(socket, "create_connection", deny)
             isolated.setattr(socket.socket, "connect", deny)
-            app = create_app(settings, log_stream=output)
+            app = bearer_app(settings, log_stream=output)
             assert app.state.settings is settings
             assert not app.state.started
             async with app.router.lifespan_context(app):
@@ -236,14 +237,13 @@ def test_method_not_allowed_keeps_safe_allow_header(application):
 
 
 @pytest.mark.parametrize("environment,expected", [("development", 200), ("production", 404)])
-def test_docs_are_development_only_and_no_business_or_health_routes_exist(
-    settings, environment, expected
-):
+def test_docs_are_development_only_and_no_business_routes_exist(settings, environment, expected):
     app = create_app(settings.model_copy(update={"app_env": environment}), log_stream=io.StringIO())
     with TestClient(app) as client:
         assert client.get("/openapi.json").status_code == expected
         assert client.get("/docs").status_code == expected
-        for path in ("/runs", "/auth/login", "/health/live", "/health/ready"):
+        assert client.get("/auth/me").status_code == 401
+        for path in ("/runs",):
             assert client.get(path).status_code == 404
 
 
