@@ -374,14 +374,28 @@ route was introduced. Implementation branch: `feature/alembic-baseline`.
 Sources: [Alembic async/connection sharing](https://alembic.sqlalchemy.org/en/latest/cookbook.html#using-asyncio-with-alembic),
 [revision inspection](https://alembic.sqlalchemy.org/en/latest/api/runtime.html#alembic.runtime.migration.MigrationContext.get_current_heads).
 
+## Foundation verification — step 1.10
+
+The [fresh-environment verification record](docs/foundation-verification.md)
+documents setup, disposable PostgreSQL, explicit migrations, real API startup,
+cleanup, resolved versions and platform limits. The candidate including pending
+step 1.9 passes all 150 tests, Ruff and dependency checks in a new Python 3.12
+environment. This documentation branch does not include the pending health code;
+follow its startup/health instructions after that PR is merged. Final sign-off
+requires both PR delivery and passing CI on the integrated revision.
+
+Vector storage is deferred: PostgreSQL remains the existing official image;
+no pgvector migration, chat tables or embedding generation is introduced.
+
 ## Development status
 
-Steps 1.1–1.7 are merged into main. Step 1.8 is locally complete on
-`feature/alembic-baseline`, pending commit/PR/CI delivery. The full suite passes
-138 tests against disposable PostgreSQL (122 earlier checks and 16 migration
-checks). Ruff lint/format and dependency consistency pass. The existing upstream
-TestClient/HTTPX warning remains. Next implementation is 1.9, liveness/readiness,
-only when requested. Without TEST_DATABASE_URL, marked PostgreSQL checks skip
+Steps 1.1–1.8 are merged into main. The separate `feature/health-checks` working
+tree contains locally verified step 1.9 (150 tests), pending commit/PR/CI delivery.
+Step 1.10 has fresh-environment local evidence on `chore/foundation-signoff`, but
+final sign-off awaits the merged health implementation and integrated required CI.
+This checkout still contains the committed pre-health implementation (138 tests);
+it adds documentation only. Do not begin plan 2 until foundation delivery is
+complete. Without TEST_DATABASE_URL, marked PostgreSQL checks skip
 locally; these skips are not counted as passes and are forbidden in CI. From the service directory:
 
 ```powershell
@@ -456,8 +470,9 @@ PR #2 delivered the initial workflow and contracts with passing GitHub checks;
 step 1.6 is also merged into origin/main. The user confirmed prerequisite branch
 protection; effective remote rules were not independently audited. Keep `tests`
 required, require PRs and an up-to-date branch, and restrict direct-push/bypass
-permissions. Step 1.7 is now merged into fetched origin/main. Step 1.8 has local evidence
-only until its PR runs CI; nothing was staged, committed, pushed or merged here.
+permissions. Steps 1.7 and 1.8 are merged into fetched origin/main. Steps 1.9 and
+1.10 still need PR/CI delivery; nothing was staged, committed, pushed or merged
+during this verification.
 
 Planning documents in the parent workspace are outside this Git repository and
 will not appear in its PR. Changes to them are reported separately until they
