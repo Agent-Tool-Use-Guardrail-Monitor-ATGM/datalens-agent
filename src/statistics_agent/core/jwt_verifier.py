@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 from time import monotonic
 
 import httpx
@@ -44,7 +45,7 @@ class JwtVerifier:
                 write=settings.read_timeout,
             ),
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
-            event_hooks={"request": [self._no_cookies]},
+            event_hooks={"request": [self._prepare_request]},
         )
         self._endpoints = None
         self._keys = {}
@@ -53,10 +54,18 @@ class JwtVerifier:
         self._last_failed = False
         self._lock = asyncio.Lock()
 
-    @staticmethod
-    async def _no_cookies(request):
+    async def _prepare_request(self, request):
         # A shared provider client must never forward one user's browser cookies.
         request.headers.pop("cookie", None)
+        # Preserve the issuer and Host header while routing to the local Docker host.
+        if (
+            self.settings.app_env == "development"
+            and os.environ.get("OIDC_DOCKER_DESKTOP") == "1"
+            and request.url.scheme == "http"
+            and request.url.host == "localhost"
+            and request.url.port == 8081
+        ):
+            request.url = request.url.copy_with(host="host.docker.internal")
 
     async def close(self):
         await self._http.aclose()
@@ -195,7 +204,11 @@ class JwtVerifier:
                 type(claims["iat"]) is not int
                 or type(claims["exp"]) is not int
                 or claims["exp"] <= claims["iat"]
-                or (access and claims["exp"] - claims["iat"] > 300)
+                or (
+                    access
+                    and claims["exp"] - claims["iat"]
+                    > getattr(self.settings, "access_token_max_seconds", 300)
+                )
                 or not isinstance(claims["sub"], str)
                 or not claims["sub"].strip()
                 or len(claims["sub"]) > 255

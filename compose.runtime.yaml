@@ -1,0 +1,49 @@
+# Local runtime overlay for Docker Desktop.
+x-agent-runtime: &agent-runtime
+  image: datalens-agent:local
+  build: .
+  env_file: .env
+  environment: &agent-environment
+    DATABASE_URL: ${AGENT_CONTAINER_DATABASE_URL:-}
+    OIDC_DOCKER_DESKTOP: "1"
+
+services:
+  agent-api:
+    <<: *agent-runtime
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${AGENT_API_PORT:-8000}:8000"
+    depends_on:
+      agent-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json, urllib.request; assert json.load(urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3))['status'] == 'ready'"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  agent-worker:
+    <<: *agent-runtime
+    restart: unless-stopped
+    command: [python, -m, statistics_agent.worker]
+    environment:
+      <<: *agent-environment
+      OIDC_CLIENT_SECRET_FILE: /run/agent-secrets/oidc-client.txt
+      AUTH_TOKEN_ENCRYPTION_KEYS_FILE: /run/agent-secrets/token-keys.json
+      AUTH_CALLBACK_URL: http://localhost:8000/auth/callback
+    volumes:
+      - type: bind
+        source: ./secrets/oidc-client.txt
+        target: /run/agent-secrets/oidc-client.txt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./secrets/token-keys.json
+        target: /run/agent-secrets/token-keys.json
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      agent-api:
+        condition: service_healthy

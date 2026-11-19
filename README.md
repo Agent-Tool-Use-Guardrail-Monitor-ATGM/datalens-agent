@@ -1,5 +1,28 @@
 # DataLens statistics-agent development
 
+## Run the backend in Docker
+
+Start local Identity first. Release port 8000 before starting the container API,
+or set `AGENT_API_PORT` to a free port. Docker Desktop routes Keycloak requests
+to the host while keeping the existing issuer URL for token validation.
+Use the existing agent `.env`, `.env.postgres` and worker authentication files.
+Then run these commands from this repository:
+
+```powershell
+$agentCompose = @('--env-file', '.env.postgres', '-f', 'compose.yaml', '-f', 'compose.runtime.yaml')
+$env:AGENT_CONTAINER_DATABASE_URL = .\.venv\Scripts\python.exe -c "from dotenv import dotenv_values; from sqlalchemy.engine import make_url; print(make_url(dotenv_values('.env')['DATABASE_URL']).set(host='agent-postgres', port=5432).render_as_string(hide_password=False))"
+docker compose @agentCompose build agent-api
+docker compose @agentCompose run --rm agent-api python -m statistics_agent.persistence.migrate upgrade
+docker compose @agentCompose up -d --wait --wait-timeout 90
+docker compose @agentCompose ps
+```
+
+The API and worker share one image and restart after an unexpected exit.
+The worker starts after the API readiness probe passes. Migrations run as an
+explicit command. Use `docker compose @agentCompose down` to stop the stack
+and retain the database volume. The Dockerfile is independent of the local
+Compose networking and can be used to build the image for Azure.
+
 ## Plan 7.8 backend acceptance
 
 The HTTP verification covers CSV upload, clarification and follow-up in one
@@ -1384,3 +1407,9 @@ with disposable PostgreSQL and Keycloak: **832 passed, no skips**, including all
 17 browser tests, with 214 upstream warnings in 371.80 seconds. Ruff, formatting,
 dependency and whitespace checks passed. Remote required `tests` still runs on the
 PR; no commit or push was performed.
+# Local signup test
+
+The local Keycloak signup test uses a 30-minute access token. Set
+`OIDC_ACCESS_TOKEN_MAX_SECONDS=1800` in the agent's ignored `.env` and recreate
+the API when Keycloak is configured to issue tokens with that lifetime.
+The agent's default limit is 300 seconds.

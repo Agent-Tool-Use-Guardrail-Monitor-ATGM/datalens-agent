@@ -38,6 +38,9 @@ class ResourceAuthSettings(BaseSettings):
         default="http://localhost:8081/realms/datalens", validation_alias="OIDC_ISSUER"
     )
     audience: ClientIdentifier = Field(default="agent-api", validation_alias="OIDC_AUDIENCE")
+    access_token_max_seconds: int = Field(
+        default=300, ge=300, le=1800, validation_alias="OIDC_ACCESS_TOKEN_MAX_SECONDS"
+    )
     authorized_parties: tuple[ClientIdentifier, ...] = Field(
         default=("agent-web",),
         min_length=1,
